@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/home/presentation/views/home_view.dart';
+import 'package:muadh/feature/Progress/presentation/view/progress_view.dart';
 
 void main() {
   runApp(MuadhApp());
@@ -10,6 +10,10 @@ class MuadhApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(title: 'Muadh App', home: HomeView());
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Muadh App',
+      home: ProgressView(),
+    );
   }
 }
