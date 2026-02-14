@@ -1,48 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/core/themes.dart';
-
-import '../widgets/status_circle.dart';
+import 'package:muadh/feature/home/presentation/views/widgets/custom_home_header.dart';
+import 'package:muadh/feature/home/presentation/views/widgets/custom_shield_counter.dart';
+import 'package:muadh/feature/home/presentation/views/widgets/custom_top_bar.dart';
+import 'package:muadh/feature/home/presentation/views/widgets/custom_verse_card.dart';
 
 class HomeViewBody extends StatelessWidget {
   const HomeViewBody({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Container(
-          height: 200,
-          decoration: BoxDecoration(
-            color: AppTheme.emeraldDark,
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(30),
-              bottomRight: Radius.circular(30),
-            ),
-          ),
-          child: Center(
-            child: Text("أقم صلاتك.. يحفظك الله", style: AppTheme.headerText),
-          ),
-        ),
-        SizedBox(height: 40),
-        StatusCircle(active: true, blockedCount: 12),
-        Spacer(),
-        Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text(
-                "«وَأَمَّا مَنْ خَافَ مَقَامَ رَبِّهِ وَنَهَى النَّفْسَ عَنِ الْهَوَىٰ * فَإِنَّ الْجَنَّةَ هِيَ الْمَأْوَىٰ»",
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
-              ),
-            ),
+        CustomHomeHeader(), // Custom Widget 1
+        SafeArea(
+          child: Column(
+            children: [
+              CustomTopBar(), // Custom Widget 2
+              SizedBox(height: 20),
+              CustomShieldCounter(days: 5), // Custom Widget 3
+              Spacer(),
+              CustomVerseCard(), // Custom Widget 4
+              SizedBox(height: 40),
+            ],
           ),
         ),
-        SizedBox(height: 20),
       ],
     );
   }

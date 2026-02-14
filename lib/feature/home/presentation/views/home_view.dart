@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:muadh/core/themes.dart';
-import 'package:muadh/feature/home/presentation/views/widgets/emergency_button.dart';
 import 'package:muadh/feature/home/presentation/views/widgets/home_view_body.dart';
 
 class HomeView extends StatelessWidget {
@@ -8,15 +7,7 @@ class HomeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      floatingActionButton: EmergencyButton(
-        onPressed: () {
-          // TODO: Add emergency flow
-        },
-      ),
-      body: HomeViewBody(),
-    );
+    return Scaffold(backgroundColor: AppTheme.background, body: HomeViewBody());
   }
 }
 // _pages[_currentIndex],
