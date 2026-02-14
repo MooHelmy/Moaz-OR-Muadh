@@ -11,6 +11,7 @@ class CustomShieldCounter extends StatelessWidget {
       height: 220,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
+        // ignore: deprecated_member_use
         border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.5),
       ),
       child: Center(
@@ -23,6 +24,7 @@ class CustomShieldCounter extends StatelessWidget {
             border: Border.all(color: const Color(0xFF10B981), width: 4),
             boxShadow: [
               BoxShadow(
+                // ignore: deprecated_member_use
                 color: Colors.black.withOpacity(0.3),
                 blurRadius: 30,
                 offset: const Offset(0, 10),
