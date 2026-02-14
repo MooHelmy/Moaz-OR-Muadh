@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/feature/home/presentation/views/home_view.dart';
 
 void main() {
   runApp(MuadhApp());
@@ -9,12 +10,6 @@ class MuadhApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Muadh App',
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Muadh App')),
-        body: const Center(child: Text('Welcome to Muadh App!')),
-      ),
-    );
+    return MaterialApp(title: 'Muadh App', home: HomeView());
   }
 }
