@@ -49,6 +49,56 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     }
   }
 
+  // دالة لإظهار نافذة طلب الرمز السري
+  Future<bool> _showPinDialog() async {
+    String input = "";
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("أدخل رمز الحماية"),
+            content: TextField(
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              onChanged: (v) => input = v,
+              decoration: const InputDecoration(
+                hintText: "الرمز السري (0000)",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("إلغاء"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  // هنا يمكنك تغيير الرمز "0000" لأي رمز تريده
+                  if (input == "0000") {
+                    Navigator.pop(context, true);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("رمز خاطئ! لا يمكن إيقاف الحماية."),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF064E3B),
+                ),
+                child: const Text(
+                  "تأكيد",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -60,9 +110,19 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
           desc: "تصفية المواقع عبر DNS آمن",
           icon: Icons.vpn_lock_rounded,
           isActive: isVpnActive,
-          onChanged: (value) {
-            setState(() => isVpnActive = value);
-            MaadhShieldManager.toggleVpn(value);
+          onChanged: (value) async {
+            if (value) {
+              // تفعيل مباشر
+              setState(() => isVpnActive = true);
+              MaadhShieldManager.toggleVpn(true);
+            } else {
+              // محاولة إيقاف -> طلب رمز سري
+              bool authorized = await _showPinDialog();
+              if (authorized) {
+                setState(() => isVpnActive = false);
+                MaadhShieldManager.toggleVpn(false);
+              }
+            }
           },
         ),
         CustomServiceCard(
@@ -70,9 +130,17 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
           desc: "مراقبة الكلمات والمحتوى المباشر",
           icon: Icons.remove_red_eye_rounded,
           isActive: isAccessibilityActive,
-          onChanged: (value) {
+          onChanged: (value) async {
             if (value) {
+              // تفعيل -> الذهاب للإعدادات
               MaadhShieldManager.requestAccessibility();
+            } else {
+              // إيقاف -> طلب رمز سري أولاً
+              bool authorized = await _showPinDialog();
+              if (authorized) {
+                // إذا الرمز صحيح، نرسله للإعدادات ليقوم بالإيقاف يدوياً
+                MaadhShieldManager.requestAccessibility();
+              }
             }
           },
         ),

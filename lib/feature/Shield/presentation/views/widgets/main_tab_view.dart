@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/core/ai_black_list_service.dart';
 import 'package:muadh/feature/Progress/presentation/view/progress_view.dart';
 import 'package:muadh/feature/Shield/presentation/views/shield_view.dart';
 import 'package:muadh/feature/home/presentation/views/home_view.dart';
@@ -17,6 +18,12 @@ class _MainTabViewState extends State<MainTabView> {
     const ShieldView(),
     const ProgressView(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    AiBlacklistService.fetchAndSyncBlacklist();
+  }
 
   @override
   Widget build(BuildContext context) {

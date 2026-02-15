@@ -1,3 +1,4 @@
+
 package com.example.muadh
 
 import android.accessibilityservice.AccessibilityService
@@ -43,12 +44,13 @@ class MaadhAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                scanNode(child, blacklist)
-            }
+            val child = node.getChild(i) ?: continue
+            scanNode(child, blacklist)
         }
     }
 
     override fun onInterrupt() {}
 }
+                scanNode(child, blacklist)
+            }
+        }
