@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="accessibility_description">يقوم تطبيق معاذ بمساعدتك على غض البصر وحجب المحتوى غير اللائق لضمان تصفح آمن.</string>
+    <string name="accessibility_description">هذه الخدمة تحميك من المحتوى غير اللائق عبر مراقبة الكلمات المحظورة.</string>
 </resources>

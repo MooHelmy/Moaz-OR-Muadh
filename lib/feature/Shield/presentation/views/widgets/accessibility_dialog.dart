@@ -30,7 +30,7 @@ class MaadhAccessDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              "ليتمكن مَعاذ من حمايتك داخل اليوتيوب والمتصفحات، يحتاج لتفعيل 'خدمة الوصول'. سيقوم التطبيق بإغلاق المحتوى غير اللائق فور ظهوره.",
+              "ليتمكن مَعاذ من حمايتك، يحتاج لتفعيل 'خدمة الوصول'.\n\n💡 في هواتف Realme:\nابحث عن 'التطبيقات التي تم تنزيلها' (Downloaded Apps) ثم اختر 'Maadh Smart Shield'.",
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,

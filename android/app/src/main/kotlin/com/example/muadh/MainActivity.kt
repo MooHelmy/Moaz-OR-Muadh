@@ -10,6 +10,8 @@ import android.content.Context
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
+import android.net.Uri
+import android.provider.Settings
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.maadh.shield/vpn"
@@ -31,7 +33,7 @@ class MainActivity: FlutterActivity() {
                 stopService(Intent(this, MaadhVpnService::class.java))
                 result.success(true)
             } else if (call.method == "openAccessibilitySettings") {
-                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 startActivity(intent)
                 result.success(true)

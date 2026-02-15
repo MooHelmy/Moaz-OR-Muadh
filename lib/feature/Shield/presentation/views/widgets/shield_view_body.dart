@@ -11,14 +11,32 @@ class ShieldViewBody extends StatefulWidget {
   State<ShieldViewBody> createState() => _ShieldViewBodyState();
 }
 
-class _ShieldViewBodyState extends State<ShieldViewBody> {
+class _ShieldViewBodyState extends State<ShieldViewBody>
+    with WidgetsBindingObserver {
   bool isVpnActive = false;
   bool isAccessibilityActive = false;
 
   @override
   void initState() {
     super.initState();
+    // إضافة مراقب لحالة التطبيق
+    WidgetsBinding.instance.addObserver(this);
     _checkInitialStatus();
+  }
+
+  @override
+  void dispose() {
+    // إزالة المراقب عند الخروج
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // عند العودة للتطبيق (Resumed)، تحقق من الحالة مجدداً
+    if (state == AppLifecycleState.resumed) {
+      _checkInitialStatus();
+    }
   }
 
   void _checkInitialStatus() async {

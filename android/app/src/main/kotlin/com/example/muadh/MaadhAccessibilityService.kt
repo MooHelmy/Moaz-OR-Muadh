@@ -8,6 +8,11 @@ import android.util.Log
 
 class MaadhAccessibilityService : AccessibilityService() {
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Log.d("MaadhShield", "✅ تم تشغيل خدمة الحارس الذكي بنجاح")
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
@@ -21,29 +26,28 @@ class MaadhAccessibilityService : AccessibilityService() {
 
         // 2. فحص محتوى الشاشة
         val rootNode = rootInActiveWindow ?: return
-        if (scanNode(rootNode, blacklist)) {
-            // 3. إجراء الحظر (الخروج للشاشة الرئيسية)
-            performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            Log.d("MaadhShield", "🚫 تم حجب محتوى مخالف!")
-        }
+        scanNode(rootNode, blacklist)
     }
 
-    private fun scanNode(node: AccessibilityNodeInfo, blacklist: List<String>): Boolean {
+    private fun scanNode(node: AccessibilityNodeInfo, blacklist: List<String>) {
         if (node.text != null) {
             val text = node.text.toString().lowercase()
             for (word in blacklist) {
                 if (text.contains(word)) {
-                    return true
+                    Log.d("MaadhShield", "🚫 تم اكتشاف كلمة محظورة: $word")
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
                 }
             }
         }
 
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            if (scanNode(child, blacklist)) return true
+            val child = node.getChild(i)
+            if (child != null) {
+                scanNode(child, blacklist)
+            }
         }
-        return false
     }
 
     override fun onInterrupt() {}
