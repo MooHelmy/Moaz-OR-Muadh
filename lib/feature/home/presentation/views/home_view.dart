@@ -10,28 +10,3 @@ class HomeView extends StatelessWidget {
     return Scaffold(backgroundColor: AppTheme.background, body: HomeViewBody());
   }
 }
-// _pages[_currentIndex],
-//       bottomNavigationBar: BottomNavigationBar(
-//         currentIndex: _currentIndex,
-//         onTap: (index) => setState(() => _currentIndex = index),
-//         selectedItemColor: Color(0xFF064E3B),
-//         unselectedItemColor: Colors.grey,
-//         type: BottomNavigationBarType.fixed,
-//         items: [
-//           BottomNavigationBarItem(
-//             icon: Icon(Icons.home_filled),
-//             label: 'الرئيسية',
-//           ),
-//           BottomNavigationBarItem(
-//             icon: Icon(Icons.shield_outlined),
-//             label: 'الحماية',
-//           ),
-//           BottomNavigationBarItem(
-//             icon: Icon(Icons.bar_chart_rounded),
-//             label: 'إحصائياتي',
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }

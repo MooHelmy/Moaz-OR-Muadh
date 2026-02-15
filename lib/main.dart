@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/Progress/presentation/view/progress_view.dart';
+import 'package:muadh/feature/Shield/presentation/views/widgets/main_tab_view.dart';
 
 void main() {
   runApp(MuadhApp());
@@ -13,7 +13,7 @@ class MuadhApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Muadh App',
-      home: ProgressView(),
+      home: const MainTabView(),
     );
   }
 }

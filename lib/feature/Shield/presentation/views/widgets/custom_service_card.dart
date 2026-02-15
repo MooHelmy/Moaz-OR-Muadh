@@ -6,6 +6,7 @@ class CustomServiceCard extends StatelessWidget {
   final IconData icon;
   final bool isActive;
   final bool isWarning;
+  final ValueChanged<bool> onChanged;
 
   const CustomServiceCard({
     super.key,
@@ -14,6 +15,7 @@ class CustomServiceCard extends StatelessWidget {
     required this.icon,
     required this.isActive,
     this.isWarning = false,
+    required this.onChanged,
   });
 
   @override
@@ -40,7 +42,7 @@ class CustomServiceCard extends StatelessWidget {
           Expanded(child: _buildTextContent()),
           Switch.adaptive(
             value: isActive,
-            onChanged: (val) {},
+            onChanged: onChanged,
             // ignore: deprecated_member_use
             activeColor: const Color(0xFF10B981),
           ),
