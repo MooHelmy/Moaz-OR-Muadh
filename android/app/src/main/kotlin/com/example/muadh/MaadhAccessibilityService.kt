@@ -1,4 +1,3 @@
-
 package com.example.muadh
 
 import android.accessibilityservice.AccessibilityService
@@ -51,6 +50,3 @@ class MaadhAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
-                scanNode(child, blacklist)
-            }
-        }

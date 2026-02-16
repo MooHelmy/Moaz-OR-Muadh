@@ -1,14 +1,14 @@
 import 'dart:developer';
 
 import 'package:flutter/services.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:muadh/constants.dart';
 
 class AiBlacklistService {
   static const platform = MethodChannel('com.maadh.shield/vpn');
 
   // ✅ أفضل طريقة لتمرير المفتاح بأمان
   // استخدم الأمر: flutter run --dart-define=GEMINI_API_KEY=YOUR_KEY
-  static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
+  // static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   // دالة التحديث الرئيسية
   static Future<void> fetchAndSyncBlacklist() async {
@@ -38,21 +38,22 @@ class AiBlacklistService {
 
   // دالة الاتصال بـ Gemini
   static Future<List<String>> _generateWordsFromGemini() async {
-    final model = GenerativeModel(model: 'gemini-pro', apiKey: _apiKey);
+    // final model = GenerativeModel(model: 'gemini-pro', apiKey: _apiKey);
 
-    // نطلب منه القائمة بصيغة محددة (CSV) لسهولة المعالجة
-    final prompt = Content.text('''
-      Generate a comma-separated list (CSV) of 100 keywords used for filtering adult content, pornography, and gambling in both Arabic and English. 
-      Do not include numbers or bullet points. Just the words separated by commas.
-      Focus on the most common terms used in URL blocking.
-    ''');
+    // // نطلب منه القائمة بصيغة محددة (CSV) لسهولة المعالجة
+    // final prompt = Content.text('''
+    //   Generate a comma-separated list (CSV) of 100 keywords used for filtering adult content, pornography, and gambling in both Arabic and English.
+    //   Do not include numbers or bullet points. Just the words separated by commas.
+    //   Focus on the most common terms used in URL blocking.
+    // ''');
 
-    final response = await model.generateContent([prompt]);
-    final text = response.text;
+    // final response = await model.generateContent([prompt]);
+    // final text = response.text;
+    final text = kBlockListWords;
 
-    if (text == null || text.isEmpty) {
-      return _getBackupList();
-    }
+    // if (text == null || text.isEmpty) {
+    //   return _getBackupList();
+    // }
 
     // تنظيف النص وتحويله لقائمة
     List<String> words = text
@@ -81,12 +82,8 @@ class AiBlacklistService {
       "xnxx",
       "xvideos",
       "pornhub",
-      "عاريات",
-      "فضيحة",
       "betting",
       "casino",
-      "قمار",
-      "مراهنات",
       "adult",
       "nude",
       "hentai",
@@ -114,8 +111,6 @@ class AiBlacklistService {
       "جماع",
       "زنا",
       "عهر",
-      "دعارة",
-      "فاحشة",
       "youporn",
       "tube8",
       "beeg",

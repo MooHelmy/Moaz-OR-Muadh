@@ -29,13 +29,43 @@ class MaadhAccessDialog extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              "ليتمكن مَعاذ من حمايتك، يحتاج لتفعيل 'خدمة الوصول'.\n\n💡 في هواتف Realme:\nابحث عن 'التطبيقات التي تم تنزيلها' (Downloaded Apps) ثم اختر 'Maadh Smart Shield'.",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.black87,
-                height: 1.5,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5), // خلفية خضراء فاتحة جداً
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  // ignore: deprecated_member_use
+                  color: const Color(0xFF10B981).withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    "اتبع الخطوات التالية:",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF064E3B),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    "1. اضغط على الزر بالأسفل.",
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    "2. ابحث عن 'التطبيقات التي تم تنزيلها' (Downloaded Apps).",
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    "3. اختر 'Maadh Smart Shield' وفعّله.",
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 25),
