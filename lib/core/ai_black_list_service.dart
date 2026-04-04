@@ -1,7 +1,6 @@
 import 'dart:developer';
 
 import 'package:flutter/services.dart';
-import 'package:muadh/constants.dart';
 
 class AiBlacklistService {
   static const platform = MethodChannel('com.maadh.shield/vpn');
@@ -49,21 +48,21 @@ class AiBlacklistService {
 
     // final response = await model.generateContent([prompt]);
     // final text = response.text;
-    final text = kBlockListWords;
+    // final text = kBlockListWords;
 
     // if (text == null || text.isEmpty) {
     //   return _getBackupList();
     // }
 
     // تنظيف النص وتحويله لقائمة
-    List<String> words = text
-        .split(',')
-        .map((e) => e.trim().toLowerCase())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    // List<String> words = text
+    //     .split(',')
+    //     .map((e) => e.trim().toLowerCase())
+    //     .where((e) => e.isNotEmpty)
+    //     .toList();
 
-    // دمج القائمة المولدة مع القائمة الاحتياطية لضمان عدم فوات الأساسيات
-    return {...words, ..._getBackupList()}.toList();
+    // // دمج القائمة المولدة مع القائمة الاحتياطية لضمان عدم فوات الأساسيات
+    return _getBackupList();
   }
 
   // قائمة احتياطية في حال عدم وجود إنترنت أو فشل الـ AI

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/Progress/presentation/view/widgets/custom_active_log.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/custom_detailed_timer.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/custom_rank_card.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/custom_section_lable.dart';
@@ -20,7 +19,7 @@ class ProgressViewBody extends StatelessWidget {
           CustomDetailedTimer(), // Custom Widget 3
           SizedBox(height: 25),
           CustomSectionLabel(label: "سجل المعارك (الحجب اليومي)"),
-          CustomActivityLog(), // Custom Widget 4
+          // CustomActivityLog(), // Custom Widget 4
           SizedBox(height: 30),
         ],
       ),
