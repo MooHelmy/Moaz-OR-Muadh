@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
 import 'package:muadh/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
 import 'package:muadh/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
 import 'package:muadh/feature/Shield/presentation/views/widgets/custom_service_card.dart';
@@ -133,7 +134,14 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
           onChanged: (value) async {
             if (value) {
               // تفعيل -> الذهاب للإعدادات
-              MaadhShieldManager.requestAccessibility();
+              return await showDialog(
+                context: context,
+                builder: (context) => MaadhAccessDialog(
+                  onConfirm: () {
+                    MaadhShieldManager.requestAccessibility();
+                  },
+                ),
+              );
             } else {
               // إيقاف -> طلب رمز سري أولاً
               bool authorized = await _showPinDialog();

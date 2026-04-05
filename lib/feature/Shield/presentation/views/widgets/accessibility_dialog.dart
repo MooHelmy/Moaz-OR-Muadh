@@ -56,11 +56,11 @@ class MaadhAccessDialog extends StatelessWidget {
                     style: TextStyle(fontSize: 14),
                   ),
                   SizedBox(height: 5),
-                  Text(
-                    "2. ابحث عن 'التطبيقات التي تم تنزيلها' (Downloaded Apps).",
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  SizedBox(height: 5),
+                  // Text(
+                  //   "2. ابحث عن 'التطبيقات التي تم تنزيلها' (Downloaded Apps).",
+                  //   style: TextStyle(fontSize: 14),
+                  // ),
+                  // SizedBox(height: 5),
                   Text(
                     "3. اختر 'Maadh Smart Shield' وفعّله.",
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/feature/Progress/presentation/view/blocks_details_view.dart';
 
 class CustomActivityLog extends StatelessWidget {
   const CustomActivityLog({super.key});
@@ -6,12 +7,20 @@ class CustomActivityLog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: const [
+      children: [
         CustomActiveLog(
           title: "تم حجب موقع مشبوه",
           time: "منذ 15 دقيقة",
           icon: Icons.block_flipped,
           color: Colors.red,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (BuildContext context) => const BlocksDetailsView(),
+              ),
+            );
+          },
         ),
         CustomActiveLog(
           title: "تصفية نتائج البحث",
@@ -35,7 +44,7 @@ class CustomActiveLog extends StatelessWidget {
   final String time;
   final IconData icon;
   final Color color;
-  final VoidCallback? onTap;
+  final void Function()? onTap;
 
   const CustomActiveLog({
     super.key,
@@ -48,7 +57,7 @@ class CustomActiveLog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -56,17 +65,11 @@ class CustomActiveLog extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Row(
           children: [
             CircleAvatar(
+              // ignore: deprecated_member_use
               backgroundColor: color.withOpacity(0.1),
               child: Icon(icon, color: color, size: 20),
             ),

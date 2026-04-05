@@ -9,14 +9,14 @@ class CustomShieldAppBar extends StatelessWidget
     return AppBar(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      leading: IconButton(
-        icon: const Icon(
-          Icons.arrow_back_ios_new_rounded,
-          color: Color(0xFF064E3B),
-          size: 20,
-        ),
-        onPressed: () => Navigator.pop(context),
-      ),
+      // leading: IconButton(
+      //   icon: const Icon(
+      //     Icons.arrow_back_ios_new_rounded,
+      //     color: Color(0xFF064E3B),
+      //     size: 20,
+      //   ),
+      //   onPressed: () => Navigator.pop(context),
+      // ),
       title: const Text(
         "إعدادات الدرع",
         style: TextStyle(

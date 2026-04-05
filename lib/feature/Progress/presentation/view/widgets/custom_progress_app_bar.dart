@@ -11,20 +11,20 @@ class CustomProgressAppBar extends StatelessWidget
       elevation: 0,
       backgroundColor:
           Colors.transparent, // شفاف عشان نعتمد على لون خلفية الشاشة
-      leading: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: CircleAvatar(
-          backgroundColor: Colors.white,
-          child: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Color(0xFF064E3B),
-              size: 18,
-            ),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-      ),
+      // leading: Padding(
+      //   padding: const EdgeInsets.all(8.0),
+      //   child: CircleAvatar(
+      //     backgroundColor: Colors.white,
+      //     child: IconButton(
+      //       icon: const Icon(
+      //         Icons.arrow_back_ios_new_rounded,
+      //         color: Color(0xFF064E3B),
+      //         size: 18,
+      //       ),
+      //       onPressed: () => Navigator.pop(context),
+      //     ),
+      //   ),
+      // ),
       title: const Text(
         "سجل الانتصارات",
         style: TextStyle(
