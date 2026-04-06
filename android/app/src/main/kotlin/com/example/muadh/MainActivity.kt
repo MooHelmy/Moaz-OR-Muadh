@@ -26,11 +26,11 @@ class MainActivity: FlutterActivity() {
                     startActivityForResult(intent, 0)
                 } else {
                     // الصلاحية موجودة بالفعل، ابدأ الخدمة مباشرة
-                    startService(Intent(this, MaadhVpnService::class.java))
+                    // startService(Intent(this, MaadhVpnService::class.java)) // معطلة لعدم وجود الملف في المرفقات
                 }
                 result.success(true)
             } else if (call.method == "stopVpn") {
-                stopService(Intent(this, MaadhVpnService::class.java))
+                // stopService(Intent(this, MaadhVpnService::class.java)) // معطلة لعدم وجود الملف في المرفقات
                 result.success(true)
             } else if (call.method == "openAccessibilitySettings") {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -51,8 +51,9 @@ class MainActivity: FlutterActivity() {
                 result.success(isEnabled)
             } else if (call.method == "updateBlacklist") {
                 val blacklist = call.arguments as String
-                val prefs = getSharedPreferences("MaadhSettings", Context.MODE_PRIVATE)
-                prefs.edit().putString("ai_blacklist", blacklist).apply()
+                // التعديل هنا: استخدام ملف FlutterSharedPreferences وإضافة البادئة flutter.
+                val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                prefs.edit().putString("flutter.ai_blacklist", blacklist).apply()
                 result.success(true)
             }
         }
@@ -61,8 +62,8 @@ class MainActivity: FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode == Activity.RESULT_OK) {
-            val intent = Intent(this, MaadhVpnService::class.java)
-            startService(intent)
+            // val intent = Intent(this, MaadhVpnService::class.java) // معطلة لعدم وجود الملف
+            // startService(intent)
         }
     }
 }

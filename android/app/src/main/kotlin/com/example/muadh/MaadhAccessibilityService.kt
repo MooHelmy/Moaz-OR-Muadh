@@ -17,8 +17,9 @@ class MaadhAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         // 1. قراءة القائمة المحظورة التي حفظها Flutter
-        val prefs = getSharedPreferences("MaadhSettings", Context.MODE_PRIVATE)
-        val blacklistString = prefs.getString("ai_blacklist", "") ?: ""
+        // ملاحظة: Flutter يحفظ المفاتيح ببادئة "flutter." تلقائياً
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val blacklistString = prefs.getString("flutter.ai_blacklist", "") ?: ""
         
         if (blacklistString.isEmpty()) return
         
@@ -35,6 +36,10 @@ class MaadhAccessibilityService : AccessibilityService() {
             for (word in blacklist) {
                 if (text.contains(word)) {
                     Log.d("MaadhShield", "🚫 تم اكتشاف كلمة محظورة: $word")
+                    
+                    // حفظ السجل ليظهر في صفحة Flutter
+                    saveBlockLog(word)
+
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     return
@@ -46,6 +51,19 @@ class MaadhAccessibilityService : AccessibilityService() {
             val child = node.getChild(i) ?: continue
             scanNode(child, blacklist)
         }
+    }
+
+    private fun saveBlockLog(word: String) {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val currentLogs = prefs.getString("flutter.shield_logs", "") ?: ""
+        val timestamp = System.currentTimeMillis()
+        
+        // التنسيق: word|timestamp|isUrl (false هنا لأنها كلمة من الشاشة)
+        val newEntry = "$word|$timestamp|false"
+        
+        val updatedLogs = if (currentLogs.isEmpty()) newEntry else "$currentLogs;$newEntry"
+        
+        prefs.edit().putString("flutter.shield_logs", updatedLogs).apply()
     }
 
     override fun onInterrupt() {}

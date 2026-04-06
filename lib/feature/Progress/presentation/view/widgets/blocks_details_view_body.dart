@@ -21,6 +21,7 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
 
   Future<void> _loadLogs() async {
     final prefs = await SharedPreferences.getInstance();
+    // المفتاح هنا "shield_logs" و shared_preferences في Flutter تبحث تلقائياً عن "flutter.shield_logs" في الأندرويد
     final String rawLogs = prefs.getString('shield_logs') ?? "";
 
     if (rawLogs.isEmpty) {
@@ -28,7 +29,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
       return;
     }
 
-    // معالجة البيانات وتجميع المتكرر
     Map<String, Map<String, dynamic>> groupedData = {};
     List<String> entries = rawLogs.split(';');
 
@@ -42,7 +42,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
 
       if (groupedData.containsKey(name)) {
         groupedData[name]!['count'] += 1;
-        // تحديث الوقت إذا كان السجل الحالي أحدث
         if (timestamp > groupedData[name]!['timestamp']) {
           groupedData[name]!['timestamp'] = timestamp;
         }
@@ -58,7 +57,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
 
     setState(() {
       blockedItems = groupedData.values.toList();
-      // ترتيب حسب الأحدث
       blockedItems.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
       isLoading = false;
     });
@@ -94,6 +92,7 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
+            // ignore: deprecated_member_use
             color: Colors.black.withOpacity(0.03),
             blurRadius: 15,
             offset: const Offset(0, 8),
@@ -104,7 +103,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
         borderRadius: BorderRadius.circular(24),
         child: Stack(
           children: [
-            // زخرفة جانبية بسيطة لتعطي مظهر فخم
             Positioned(
               right: 0,
               top: 0,
@@ -118,12 +116,12 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // أيقونة نوع الحجب
                   CircleAvatar(
                     radius: 25,
                     backgroundColor:
                         (item['isUrl'] ? Colors.red : Colors.orange)
-                            .withOpacity(0.1),
+                        // ignore: deprecated_member_use
+                        .withOpacity(0.1),
                     child: Icon(
                       item['isUrl']
                           ? Icons.public_off_rounded
@@ -135,7 +133,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
                     ),
                   ),
                   const SizedBox(width: 15),
-                  // تفاصيل النص
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,7 +167,6 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
                       ],
                     ),
                   ),
-                  // عداد المرات (Badge)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
