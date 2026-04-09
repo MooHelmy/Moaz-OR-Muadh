@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:muadh/core/utils/notifications_services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BlocksDetailsViewBody extends StatefulWidget {
@@ -17,11 +18,24 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
   void initState() {
     super.initState();
     _loadLogs();
+
+    // ربط الشاشة بخدمة الإشعارات لتحديث البيانات فور الحجب
+    NotificationService.onBlockDetected = (word) {
+      if (mounted) {
+        _loadLogs();
+      }
+    };
+  }
+
+  @override
+  void dispose() {
+    NotificationService.onBlockDetected = null;
+    super.dispose();
   }
 
   Future<void> _loadLogs() async {
     final prefs = await SharedPreferences.getInstance();
-    // المفتاح هنا "shield_logs" و shared_preferences في Flutter تبحث تلقائياً عن "flutter.shield_logs" في الأندرويد
+    // The key here is "shield_logs"
     final String rawLogs = prefs.getString('shield_logs') ?? "";
 
     if (rawLogs.isEmpty) {
@@ -33,25 +47,30 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     List<String> entries = rawLogs.split(';');
 
     for (var entry in entries) {
+      if (entry.isEmpty) continue;
       List<String> parts = entry.split('|');
       if (parts.length < 3) continue;
 
-      String name = parts[0];
-      int timestamp = int.tryParse(parts[1]) ?? 0;
-      bool isUrl = parts[2] == 'true';
+      try {
+        String name = parts[0];
+        int timestamp = int.tryParse(parts[1]) ?? 0;
+        bool isUrl = parts[2] == 'true';
 
-      if (groupedData.containsKey(name)) {
-        groupedData[name]!['count'] += 1;
-        if (timestamp > groupedData[name]!['timestamp']) {
-          groupedData[name]!['timestamp'] = timestamp;
+        if (groupedData.containsKey(name)) {
+          groupedData[name]!['count'] += 1;
+          if (timestamp > groupedData[name]!['timestamp']) {
+            groupedData[name]!['timestamp'] = timestamp;
+          }
+        } else {
+          groupedData[name] = {
+            "name": name,
+            "timestamp": timestamp,
+            "count": 1,
+            "isUrl": isUrl,
+          };
         }
-      } else {
-        groupedData[name] = {
-          "name": name,
-          "timestamp": timestamp,
-          "count": 1,
-          "isUrl": isUrl,
-        };
+      } catch (e) {
+        debugPrint("Error parsing log entry: $e");
       }
     }
 

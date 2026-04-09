@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 
 class MaadhAccessibilityService : AccessibilityService() {
@@ -39,6 +40,11 @@ class MaadhAccessibilityService : AccessibilityService() {
                     
                     // حفظ السجل ليظهر في صفحة Flutter
                     saveBlockLog(word)
+
+                    // إرسال بث فوري لنظام أندرويد ليتم التقاطه في MainActivity
+                    val intent = Intent("com.maadh.shield.BLOCKED_EVENT")
+                    intent.putExtra("word", word)
+                    sendBroadcast(intent)
 
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     performGlobalAction(GLOBAL_ACTION_BACK)

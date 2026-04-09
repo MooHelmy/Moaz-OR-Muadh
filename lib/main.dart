@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/core/utils/notifications_services.dart';
 import 'package:muadh/feature/Shield/presentation/views/widgets/main_tab_view.dart';
 
-void main() {
+void main() async {
+  // التأكد من تهيئة الـ Flutter Engine قبل استدعاء أي Channel
+  WidgetsFlutterBinding.ensureInitialized();
+  // تهيئة خدمة الإشعارات وبدء الاستماع للأحداث القادمة من الأندرويد
+  await NotificationService().init();
   runApp(MuadhApp());
 }
 

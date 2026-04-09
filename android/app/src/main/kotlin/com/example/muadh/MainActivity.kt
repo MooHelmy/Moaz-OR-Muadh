@@ -3,6 +3,8 @@ package com.example.muadh
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Intent
 import android.net.VpnService
 import android.app.Activity
@@ -19,7 +21,18 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+
+        // استقبال البث من MaadhAccessibilityService وتحويله لـ Flutter
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val word = intent?.getStringExtra("word") ?: "محتوى غير لائق"
+                methodChannel.invokeMethod("onBlockedContent", word)
+            }
+        }
+        registerReceiver(receiver, IntentFilter("com.maadh.shield.BLOCKED_EVENT"))
+
+        methodChannel.setMethodCallHandler { call, result ->
             if (call.method == "startVpn") {
                 val intent = VpnService.prepare(this)
                 if (intent != null) {
