@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/blocks_details_view_body.dart';
 
-class BlocksDetailsView extends StatelessWidget {
+class BlocksDetailsView extends StatefulWidget {
   const BlocksDetailsView({super.key});
+
+  @override
+  State<BlocksDetailsView> createState() => _BlocksDetailsViewState();
+}
+
+class _BlocksDetailsViewState extends State<BlocksDetailsView> {
+  // مفتاح للوصول إلى الدالات داخل الـ Body
+  final GlobalKey<BlocksDetailsViewBodyState> _bodyKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -28,8 +36,18 @@ class BlocksDetailsView extends StatelessWidget {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.delete_sweep_rounded,
+              color: Colors.redAccent,
+            ),
+            tooltip: "مسح السجل",
+            onPressed: () => _bodyKey.currentState?.clearLogs(),
+          ),
+        ],
       ),
-      body: const BlocksDetailsViewBody(),
+      body: BlocksDetailsViewBody(key: _bodyKey),
     );
   }
 }

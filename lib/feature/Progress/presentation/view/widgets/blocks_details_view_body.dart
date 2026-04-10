@@ -7,12 +7,14 @@ class BlocksDetailsViewBody extends StatefulWidget {
   const BlocksDetailsViewBody({super.key});
 
   @override
-  State<BlocksDetailsViewBody> createState() => _BlocksDetailsViewBodyState();
+  State<BlocksDetailsViewBody> createState() => BlocksDetailsViewBodyState();
 }
 
-class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
+class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
   List<Map<String, dynamic>> blockedItems = [];
   bool isLoading = true;
+  int maxCount = 0;
+  final NotificationService notificationService = NotificationService();
 
   @override
   void initState() {
@@ -81,6 +83,34 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     });
   }
 
+  // دالة مسح السجل وإظهار الرسالة
+  Future<void> clearLogs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('shield_logs');
+
+    setState(() {
+      blockedItems = [];
+    });
+
+    if (!mounted) return;
+
+    // إظهار الرسالة الجميلة
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          "غفر الله ذنبك وطهر قلبك وحصن فرجك 🤲 ",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        backgroundColor: const Color(0xFF064E3B),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        margin: const EdgeInsets.all(20),
+      ),
+    );
+  }
+
   String _formatTime(int timestamp) {
     var date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     return intl.DateFormat('hh:mm a').format(date);
@@ -98,6 +128,16 @@ class _BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
       itemCount: blockedItems.length,
       itemBuilder: (context, index) {
         final item = blockedItems[index];
+        maxCount = int.parse(item['count'].toString());
+        if (maxCount >= 100) {
+          notificationService.showInstantNotification(
+            id: DateTime.now().microsecondsSinceEpoch % 1000000,
+            title:
+                "هذه الكلمة تم حجبها اكثر من ${item['count']} مرة ${notificationService.strikethrough(item['name'])}  🛡️",
+            body: "اتقى الله هذا يكفى لا تستخدمها 😭 ولاتبحث عنها مرة اخرى",
+          );
+        }
+
         return _buildProfessionalBlockCard(item);
       },
     );
