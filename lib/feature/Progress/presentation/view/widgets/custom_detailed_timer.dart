@@ -1,19 +1,50 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class CustomDetailedTimer extends StatefulWidget {
   const CustomDetailedTimer({super.key, required this.snapshot});
-  final AsyncSnapshot<Map<String, int>> snapshot;
+  final AsyncSnapshot<DateTime?> snapshot;
 
   @override
   State<CustomDetailedTimer> createState() => _CustomDetailedTimerState();
 }
 
 class _CustomDetailedTimerState extends State<CustomDetailedTimer> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // تشغيل مؤقت يطلب إعادة بناء الواجهة كل ثانية واحدة
+    _timer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel(); // إغلاق المؤقت عند الخروج من الصفحة لتوفير البطارية
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Extract data safely, providing defaults if the snapshot is loading or null
-    final Map<String, int> timerData =
-        widget.snapshot.data ?? {"days": 0, "hours": 0, "minutes": 0};
+    // حساب الفارق الزمني الحالي بناءً على تاريخ التثبيت والوقت الآن
+    final DateTime? installDate = widget.snapshot.data;
+    final DateTime now = DateTime.now();
+
+    final Duration difference = installDate != null
+        ? now.difference(installDate)
+        : Duration.zero;
+
+    final Map<String, String> timerData = {
+      "days": difference.inDays.toString(),
+      "hours": (difference.inHours % 24).toString().padLeft(2, '0'),
+      "minutes": (difference.inMinutes % 60).toString().padLeft(2, '0'),
+    };
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24),
@@ -25,14 +56,11 @@ class _CustomDetailedTimerState extends State<CustomDetailedTimer> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          CustomTimetBlock(value: timerData["days"].toString(), label: "أيام"),
+          CustomTimeBlock(value: timerData["days"]!, label: "أيام"),
           _buildDivider(),
-          CustomTimetBlock(value: timerData["hours"].toString(), label: "ساعة"),
+          CustomTimeBlock(value: timerData["hours"]!, label: "ساعة"),
           _buildDivider(),
-          CustomTimetBlock(
-            value: timerData["minutes"].toString(),
-            label: "دقيقة",
-          ),
+          CustomTimeBlock(value: timerData["minutes"]!, label: "دقيقة"),
         ],
       ),
     );
@@ -43,8 +71,8 @@ class _CustomDetailedTimerState extends State<CustomDetailedTimer> {
   }
 }
 
-class CustomTimetBlock extends StatelessWidget {
-  const CustomTimetBlock({super.key, required this.value, required this.label});
+class CustomTimeBlock extends StatelessWidget {
+  const CustomTimeBlock({super.key, required this.value, required this.label});
   final String value;
   final String label;
   @override

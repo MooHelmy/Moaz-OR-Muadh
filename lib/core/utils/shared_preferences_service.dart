@@ -9,6 +9,13 @@ class SharePreferencesService {
     }
   }
 
+  static Future<DateTime?> getInstallDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final installDateString = prefs.getString('install_date');
+    if (installDateString == null) return null;
+    return DateTime.parse(installDateString);
+  }
+
   static Future<Map<String, int>> getUsageDuration() async {
     final prefs = await SharedPreferences.getInstance();
 
