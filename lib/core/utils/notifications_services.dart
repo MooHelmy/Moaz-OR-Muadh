@@ -9,6 +9,7 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   static const platform = MethodChannel('com.maadh.shield/vpn');
+  static String? _lastBlockedWord; // لتخزين آخر كلمة محظورة تم الإشعار عنها
 
   // متغير ثابت لتحديث الشاشات المفتوحة (مثل شاشة السجلات)
   static Function(String)? onBlockDetected;
@@ -42,17 +43,25 @@ class NotificationService {
   void _setupMethodChannel() {
     platform.setMethodCallHandler((call) async {
       if (call.method == "onBlockedContent") {
-        final String word = call.arguments;
-        await showInstantNotification(
-          id: DateTime.now().microsecondsSinceEpoch % 1000000,
-          title: "تم الحجب بنجاح 🛡️",
-          body: "حاول أحدهم الوصول إلى: $word وتم منعه.",
-        );
+        final String word = call.arguments as String; // التأكد من نوع البيانات
+        if (word.isNotEmpty && word != _lastBlockedWord) {
+          // التحقق من أن الكلمة ليست فارغة وأنها مختلفة عن الأخيرة
+          await showInstantNotification(
+            id: DateTime.now().microsecondsSinceEpoch % 1000000,
+            title: "تم حجب كلمة ${strikethrough(word)} بنجاح 🛡️",
+            body: "الم تعلم ان الله يرى ",
+          );
+          _lastBlockedWord = word; // تحديث آخر كلمة محظورة تم الإشعار عنها
+        }
 
         // لو المستخدم فاتح صفحة السجلات، نخليه يحدث البيانات تلقائياً
         onBlockDetected?.call(word);
       }
     });
+  }
+
+  String strikethrough(String text) {
+    return text.split('').map((char) => '$char\u0336').join();
   }
 
   void _onNotificationTapped(NotificationResponse response) {}

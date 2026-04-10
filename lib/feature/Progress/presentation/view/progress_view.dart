@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:muadh/core/utils/shared_preferences_service.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/custom_progress_app_bar.dart';
 import 'package:muadh/feature/Progress/presentation/view/widgets/progress_view_body.dart';
 
-class ProgressView extends StatelessWidget {
+class ProgressView extends StatefulWidget {
   const ProgressView({super.key});
+
+  @override
+  State<ProgressView> createState() => _ProgressViewState();
+}
+
+class _ProgressViewState extends State<ProgressView> {
+  @override
+  void initState() {
+    super.initState();
+    SharePreferencesService.saveInstallDate();
+  }
 
   @override
   Widget build(BuildContext context) {

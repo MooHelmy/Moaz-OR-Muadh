@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 
-class CustomDetailedTimer extends StatelessWidget {
-  const CustomDetailedTimer({super.key});
+class CustomDetailedTimer extends StatefulWidget {
+  const CustomDetailedTimer({super.key, required this.snapshot});
+  final AsyncSnapshot<Map<String, int>> snapshot;
 
   @override
+  State<CustomDetailedTimer> createState() => _CustomDetailedTimerState();
+}
+
+class _CustomDetailedTimerState extends State<CustomDetailedTimer> {
+  @override
   Widget build(BuildContext context) {
+    // Extract data safely, providing defaults if the snapshot is loading or null
+    final Map<String, int> timerData =
+        widget.snapshot.data ?? {"days": 0, "hours": 0, "minutes": 0};
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24),
       decoration: BoxDecoration(
@@ -15,17 +25,30 @@ class CustomDetailedTimer extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildTimeBlock("5", "أيام"),
+          CustomTimetBlock(value: timerData["days"].toString(), label: "أيام"),
           _buildDivider(),
-          _buildTimeBlock("14", "ساعة"),
+          CustomTimetBlock(value: timerData["hours"].toString(), label: "ساعة"),
           _buildDivider(),
-          _buildTimeBlock("32", "دقيقة"),
+          CustomTimetBlock(
+            value: timerData["minutes"].toString(),
+            label: "دقيقة",
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeBlock(String value, String label) {
+  Widget _buildDivider() {
+    return Container(height: 45, width: 1.5, color: const Color(0xFFF0F4F3));
+  }
+}
+
+class CustomTimetBlock extends StatelessWidget {
+  const CustomTimetBlock({super.key, required this.value, required this.label});
+  final String value;
+  final String label;
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
         Text(
@@ -46,9 +69,5 @@ class CustomDetailedTimer extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  Widget _buildDivider() {
-    return Container(height: 45, width: 1.5, color: const Color(0xFFF0F4F3));
   }
 }
