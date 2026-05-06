@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/core/utils/notifications_services.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/main_tab_view.dart';
+import 'package:medi_guard/core/utils/notifications_services.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
 
 void main() async {
   // التأكد من تهيئة الـ Flutter Engine قبل استدعاء أي Channel

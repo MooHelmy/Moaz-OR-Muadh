@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:muadh/core/utils/notifications_services.dart';
+import 'package:medi_guard/core/utils/notifications_services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BlocksDetailsViewBody extends StatefulWidget {
@@ -179,15 +179,14 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
                     radius: 25,
                     backgroundColor:
                         (item['isUrl'] ? Colors.red : Colors.orange)
-                        // ignore: deprecated_member_use
-                        .withOpacity(0.1),
+                            // ignore: deprecated_member_use
+                            .withOpacity(0.1),
                     child: Icon(
                       item['isUrl']
                           ? Icons.public_off_rounded
                           : Icons.text_snippet_rounded,
-                      color: item['isUrl']
-                          ? Colors.red[700]
-                          : Colors.orange[700],
+                      color:
+                          item['isUrl'] ? Colors.red[700] : Colors.orange[700],
                       size: 24,
                     ),
                   ),

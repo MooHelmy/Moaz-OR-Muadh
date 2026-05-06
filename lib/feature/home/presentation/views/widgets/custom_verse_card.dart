@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/home/presentation/views/widgets/custom_emergency_button.dart';
+import 'package:medi_guard/feature/home/presentation/views/widgets/custom_emergency_button.dart';
 
 class CustomVerseCard extends StatelessWidget {
   const CustomVerseCard({super.key});

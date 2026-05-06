@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/Progress/presentation/view/blocks_details_view.dart';
+import 'package:medi_guard/feature/Progress/presentation/view/blocks_details_view.dart';
 
 class CustomActivityLog extends StatelessWidget {
   const CustomActivityLog({super.key});

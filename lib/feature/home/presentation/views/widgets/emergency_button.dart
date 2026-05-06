@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/core/theme/themes.dart';
+import 'package:medi_guard/core/theme/themes.dart';
 
 class EmergencyButton extends StatelessWidget {
   final VoidCallback onPressed;

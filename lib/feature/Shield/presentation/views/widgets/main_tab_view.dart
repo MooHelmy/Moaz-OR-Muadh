@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/core/utils/ai_black_list_service.dart';
-import 'package:muadh/feature/Progress/presentation/view/progress_view.dart';
-import 'package:muadh/feature/Shield/presentation/views/shield_view.dart';
-import 'package:muadh/feature/home/presentation/views/home_view.dart';
+import 'package:medi_guard/core/utils/ai_black_list_service.dart';
+import 'package:medi_guard/feature/Progress/presentation/view/progress_view.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/shield_view.dart';
+import 'package:medi_guard/feature/home/presentation/views/home_view.dart';
 
 class MainTabView extends StatefulWidget {
   const MainTabView({super.key});

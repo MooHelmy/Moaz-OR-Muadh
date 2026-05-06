@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/custom_service_card.dart';
-import 'package:muadh/feature/Shield/presentation/views/widgets/shield_channel.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_service_card.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/shield_channel.dart';
 
 class ShieldViewBody extends StatefulWidget {
   const ShieldViewBody({super.key});

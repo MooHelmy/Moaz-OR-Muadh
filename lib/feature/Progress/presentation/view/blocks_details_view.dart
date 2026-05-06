@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:muadh/feature/Progress/presentation/view/widgets/blocks_details_view_body.dart';
+import 'package:medi_guard/feature/Progress/presentation/view/widgets/blocks_details_view_body.dart';
 
 class BlocksDetailsView extends StatefulWidget {
   const BlocksDetailsView({super.key});
