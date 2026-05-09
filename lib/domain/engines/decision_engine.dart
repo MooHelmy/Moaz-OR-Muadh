@@ -6,24 +6,57 @@ class DecisionEngine {
   double rejectThreshold;
 
   DecisionEngine({
-    this.acceptThreshold = 0.25,
-    this.rejectThreshold = 0.55,
+    this.acceptThreshold = 0.20, // كان 0.25
+    this.rejectThreshold = 0.35, // كان 0.55 — ده كان السبب!
   });
 
-  MediaDecision decide(ScoredResult scored, NsfwResult rawNsfw) {
-    // ✅ موديل Marqo: nsfw.nsfw هو الاحتمال المباشر للمحتوى غير اللائق
-    // ثقة عالية جداً → reject فوري بدون ما ننتظر الـ ensemble
-    if (rawNsfw.nsfw > 0.85) {
+  // ✅ قائمة مواقع إباحية معروفة في اسم الملف → حذف فوري بدون فحص
+  static const _blockedKeywords = [
+    'xnxx',
+    'xvideos',
+    'pornhub',
+    'xhamster',
+    'redtube',
+    'youporn',
+    'brazzers',
+    'bangbros',
+    'porn',
+    'xxx',
+    'sexy',
+    'nude',
+    'naked',
+    'nsfw',
+  ];
+
+  MediaDecision decide(ScoredResult scored, NsfwResult rawNsfw,
+      {String? filePath}) {
+    // ✅ 1. اسم الملف — لو فيه كلمة إباحية واضحة → REJECT فوري
+    if (filePath != null) {
+      final nameLower = filePath.split('/').last.toLowerCase();
+      for (final kw in _blockedKeywords) {
+        if (nameLower.contains(kw)) {
+          return MediaDecision.reject(
+            reason: 'blocked_filename ($kw)',
+            confidence: 1.0,
+          );
+        }
+      }
+    }
+
+    // ✅ 2. لو الموديل شايف NSFW أكبر من SFW → REJECT مباشرة
+    // ده أبسط وأقوى من أي threshold ثابت
+    if (rawNsfw.nsfw > rawNsfw.sfw) {
       return MediaDecision.reject(
-        reason: 'high_confidence_nsfw (marqo=${rawNsfw.nsfw.toStringAsFixed(3)})',
+        reason:
+            'nsfw>sfw (${rawNsfw.nsfw.toStringAsFixed(3)} vs ${rawNsfw.sfw.toStringAsFixed(3)})',
         confidence: rawNsfw.nsfw,
       );
     }
 
-    // الـ ensemble score يأخذ skin و face في الاعتبار
+    // ✅ 3. Ensemble score
     if (scored.weighted >= rejectThreshold) {
       return MediaDecision.reject(
-        reason: 'high_ensemble_score',
+        reason: 'ensemble_score (${scored.weighted.toStringAsFixed(3)})',
         confidence: scored.weighted,
       );
     }
@@ -32,7 +65,6 @@ class DecisionEngine {
       return MediaDecision.accept(confidence: 1 - scored.weighted);
     }
 
-    // المنطقة الرمادية → review
     return MediaDecision.review(confidence: scored.weighted);
   }
 }

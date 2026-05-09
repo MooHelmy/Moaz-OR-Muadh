@@ -35,7 +35,8 @@ class ScanServiceManager {
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
         // كل 5 ثواني → sweep fallback
-        eventAction: ForegroundTaskEventAction.repeat(5000),
+        eventAction:
+            ForegroundTaskEventAction.repeat(30000), // كل 30 ثانية للـ log فقط
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
         allowWakeLock: true,
@@ -93,19 +94,12 @@ class ScanTaskHandler extends TaskHandler {
   ScanQueue? _queue;
   bool _ready = false;
   int _repeatCount = 0;
-
-  // ANSI colors للـ debug log
-  static const reset = '\x1B[0m';
-  static const red = '\x1B[31m';
-  static const green = '\x1B[32m';
-  static const yellow = '\x1B[33m';
-  static const blue = '\x1B[34m';
+  // ✅ flag عشان الـ sweep الأولي يتعمل مرة واحدة بس
 
   // ─── onStart ────────────────────────────────
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
     debugPrint('▶️ ScanTaskHandler.onStart at $timestamp');
-    // لا ننتظر — عشان الـ service ميتايمأوتش
     _initializeServices();
   }
 
@@ -159,16 +153,16 @@ class ScanTaskHandler extends TaskHandler {
       return;
     }
 
-    if (ScanTargets.isImage(data)) {
+    if (ScanTargets.isImage(data) || ScanTargets.isVideo(data)) {
       debugPrint('📥 Queuing: $data');
       _queue!.add(data);
     } else {
-      debugPrint('⏭️ Not an image → skipped');
+      debugPrint('⏭️ Not a media file → skipped');
     }
   }
 
   // ─── onRepeatEvent  ────────────────────────
-  // كل 5 ثواني → sweep fallback عشان نمسك الملفات اللي فاتت
+  // كل 30 ثانية → فقط للمراقبة والـ log، مش للـ sweep
   @override
   void onRepeatEvent(DateTime timestamp) {
     _repeatCount++;
@@ -177,32 +171,46 @@ class ScanTaskHandler extends TaskHandler {
       ' | queue=${_queue?.pendingCount ?? "N/A"}'
       ' | processing=${_queue?.isProcessing ?? "N/A"}',
     );
-
-    if (!_ready) return;
-    _sweepAllFolders();
+    // ✅ الـ sweep الأولي اتعمل في _initializeServices
+    // مش محتاجين نعيده كل 30 ثانية — FileObserver هو اللي بيجيب الجديد
   }
 
   // ─── sweep ────────────────────────────────
   Future<void> _sweepAllFolders() async {
     if (_queue == null) return;
-    int found = 0;
+
+    // ✅ اجمع كل الملفات من كل الفولدرات
+    final allFiles = <File>[];
 
     for (final folder in ScanTargets.folders) {
       final dir = Directory(folder);
       if (!await dir.exists()) continue;
 
-      await for (final entity in dir.list(recursive: false)) {
-        if (entity is File && ScanTargets.isImage(entity.path)) {
-          found++;
-          _queue!.add(entity.path);
+      // ✅ recursive: true عشان نمسك الفيديوهات في Sent/ وباقي السب-فولدرات
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File &&
+            (ScanTargets.isImage(entity.path) ||
+                ScanTargets.isVideo(entity.path))) {
+          allFiles.add(entity);
         }
       }
     }
 
-    if (found > 0) {
-      debugPrint(
-          '🔍 Sweep: $found files queued from ${ScanTargets.folders.length} folders');
+    if (allFiles.isEmpty) return;
+
+    // ✅ رتّب من الأحدث للأقدم (last modified)
+    allFiles.sort((a, b) {
+      final aStat = a.statSync();
+      final bStat = b.statSync();
+      return bStat.modified.compareTo(aStat.modified);
+    });
+
+    for (final file in allFiles) {
+      _queue!.add(file.path);
     }
+
+    debugPrint(
+        '🔍 Sweep: ${allFiles.length} files queued (newest first) from ${ScanTargets.folders.length} folders');
   }
 
   // ─── onDestroy ────────────────────────────

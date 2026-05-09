@@ -8,14 +8,14 @@ import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
-const String _reset  = '\x1B[0m';
-const String _red    = '\x1B[31m';
-const String _green  = '\x1B[32m';
+const String _reset = '\x1B[0m';
+const String _red = '\x1B[31m';
+const String _green = '\x1B[32m';
 const String _yellow = '\x1B[33m';
-const String _blue   = '\x1B[34m';
+const String _blue = '\x1B[34m';
 
 // ✅ عدد الـ frames المطلوب فحصها من كل فيديو
 const int _videoFrameCount = 8;
@@ -76,7 +76,8 @@ class ScanQueue {
   // ✅ بيستخرج _videoFrameCount frames من الفيديو ويفحصهم
   // لو أي frame REJECT → يحذف الفيديو فوراً
   Future<void> _processVideo(String videoPath) async {
-    debugPrint('$_blue🎥 Processing video: ${videoPath.split('/').last}$_reset');
+    debugPrint(
+        '$_blue🎥 Processing video: ${videoPath.split('/').last}$_reset');
 
     final file = File(videoPath);
     if (!await file.exists()) return;
@@ -85,7 +86,8 @@ class ScanQueue {
     final hash = await _getFileHash(file);
     final hashesBox = Hive.box('scanned_hashes');
     if (hashesBox.values.contains(hash)) {
-      debugPrint('⏭️ Already scanned (hash match): ${videoPath.split('/').last}');
+      debugPrint(
+          '⏭️ Already scanned (hash match): ${videoPath.split('/').last}');
       return;
     }
 
@@ -115,19 +117,24 @@ class ScanQueue {
 
       debugPrint('📸 Extracted ${framePaths.length} frames from video');
 
-      // فحص كل frame
+      // ✅ القاعدة: لو NSFW > SFW في أي frame → حذف فوري
+      // مش بنستخدم threshold ثابت — بنقارن الاحتمالين مباشرة
       for (int i = 0; i < framePaths.length; i++) {
         final framePath = framePaths[i];
         final scoredResult = await scorer.score(framePath);
-        final decision = engine.decide(scoredResult, scoredResult.rawNsfw);
 
-        debugPrint('   Frame $i → NSFW=${scoredResult.rawNsfw.nsfw.toStringAsFixed(3)}'
-            ' score=${scoredResult.weighted.toStringAsFixed(3)}'
-            ' → ${decision.result.name.toUpperCase()}');
+        final nsfw = scoredResult.rawNsfw.nsfw;
+        final sfw = scoredResult.rawNsfw.sfw;
+        // ✅ الشرط الوحيد: هل الموديل شايفه NSFW أكتر من SFW؟
+        final frameIsNsfw = nsfw > sfw;
 
-        if (decision.result == DecisionResult.reject) {
+        debugPrint('   Frame $i → NSFW=${nsfw.toStringAsFixed(3)}'
+            ' SFW=${sfw.toStringAsFixed(3)}'
+            ' → ${frameIsNsfw ? "REJECT🔴" : "SAFE✅"}');
+
+        if (frameIsNsfw) {
           isNsfw = true;
-          break; // واحد REJECT يكفي
+          break; // frame واحد يكفي
         }
       }
 
@@ -144,12 +151,15 @@ class ScanQueue {
     } finally {
       // ✅ امسح الـ frames المؤقتة دايماً
       for (final fp in framePaths) {
-        try { File(fp).deleteSync(); } catch (_) {}
+        try {
+          File(fp).deleteSync();
+        } catch (_) {}
       }
     }
   }
 
-  Future<String?> _extractFrame(String videoPath, String tempDir, int index) async {
+  Future<String?> _extractFrame(
+      String videoPath, String tempDir, int index) async {
     try {
       // نوزع الـ timestamps على طول الفيديو: 10%, 20%, ... 90%
       // video_thumbnail بيدعم timeMs بس مش بيعرف duration → نستخدم position أرقام ثابتة
@@ -199,23 +209,30 @@ class ScanQueue {
     // ✅ حل مشكلة المساحة: خزّن بيانات مبسطة بس
     // مش بنخزن الـ path الطويل كـ key، بنخزن الـ hash بس
     await decisionsBox.put(hash.substring(0, 16), {
-      's': decision.result.name[0],       // 'a', 'r', 'v' — حرف واحد بدل كلمة
+      's': decision.result.name[0], // 'a', 'r', 'v' — حرف واحد بدل كلمة
       't': DateTime.now().millisecondsSinceEpoch, // int بدل string
       'w': (scoredResult.weighted * 1000).round(), // int بدل double
     });
 
     String resultColor;
     switch (decision.result) {
-      case DecisionResult.accept: resultColor = _green; break;
-      case DecisionResult.review: resultColor = _yellow; break;
-      case DecisionResult.reject: resultColor = _red; break;
+      case DecisionResult.accept:
+        resultColor = _green;
+        break;
+      case DecisionResult.review:
+        resultColor = _yellow;
+        break;
+      case DecisionResult.reject:
+        resultColor = _red;
+        break;
     }
 
     debugPrint('   ↳ 🔞 NSFW:  ${scoredResult.rawNsfw}');
     debugPrint('   ↳ 👤 Skin:  ${scoredResult.skinScore.toStringAsFixed(3)}');
     debugPrint('   ↳ 🎭 Face:  ${scoredResult.faceScore.toStringAsFixed(3)}');
     debugPrint('   ↳ 📈 TOTAL: ${scoredResult.weighted.toStringAsFixed(3)}');
-    debugPrint('   ↳ ⚖️ RESULT: $resultColor${decision.result.name.toUpperCase()} (${decision.reason})$_reset');
+    debugPrint(
+        '   ↳ ⚖️ RESULT: $resultColor${decision.result.name.toUpperCase()} (${decision.reason})$_reset');
     debugPrint('$_reset-----------------------------------------------');
 
     if (decision.result == DecisionResult.reject) {
@@ -234,7 +251,8 @@ class ScanQueue {
   void _cleanupHiveIfNeeded(Box hashesBox) {
     const maxEntries = 5000;
     if (hashesBox.length > maxEntries) {
-      final keysToDelete = hashesBox.keys.take(hashesBox.length - maxEntries).toList();
+      final keysToDelete =
+          hashesBox.keys.take(hashesBox.length - maxEntries).toList();
       hashesBox.deleteAll(keysToDelete);
       // compact بعد الحذف عشان المساحة تترجع فعلاً
       hashesBox.compact();
