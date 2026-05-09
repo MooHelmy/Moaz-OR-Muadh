@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "714060114088",
+    "project_id": "muadh-bafa4",
+    "storage_bucket": "muadh-bafa4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714060114088:android:84477c61142d12c91eba9d",
+        "android_client_info": {
+          "package_name": "com.example.muadh"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDz2wF-KLFy7kCUxAdsOyYHHmXyGTTWufQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

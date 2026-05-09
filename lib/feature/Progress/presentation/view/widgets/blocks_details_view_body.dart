@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:medi_guard/core/utils/notifications_services.dart';
+import 'package:medi_guard/core/utils/notifications_services_old.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BlocksDetailsViewBody extends StatefulWidget {
@@ -14,7 +14,7 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
   List<Map<String, dynamic>> blockedItems = [];
   bool isLoading = true;
   int maxCount = 0;
-  final NotificationService notificationService = NotificationService();
+  final AppNotificationService notificationService = AppNotificationService();
 
   @override
   void initState() {
@@ -22,7 +22,7 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     _loadLogs();
 
     // ربط الشاشة بخدمة الإشعارات لتحديث البيانات فور الحجب
-    NotificationService.onBlockDetected = (word) {
+    AppNotificationService.onBlockDetected = (word) {
       if (mounted) {
         _loadLogs();
       }
@@ -31,7 +31,7 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
 
   @override
   void dispose() {
-    NotificationService.onBlockDetected = null;
+    AppNotificationService.onBlockDetected = null;
     super.dispose();
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:medi_guard/core/utils/ai_black_list_service.dart';
+import 'package:medi_guard/feature/Progress/presentation/view/monitoring_view.dart';
 import 'package:medi_guard/feature/Progress/presentation/view/progress_view.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/shield_view.dart';
 import 'package:medi_guard/feature/home/presentation/views/home_view.dart';
@@ -16,6 +17,7 @@ class _MainTabViewState extends State<MainTabView> {
   final List<Widget> _pages = [
     const HomeView(),
     const ShieldView(),
+    const MonitoringView(),
     const ProgressView(),
   ];
 
@@ -43,6 +45,10 @@ class _MainTabViewState extends State<MainTabView> {
           BottomNavigationBarItem(
             icon: Icon(Icons.shield_outlined),
             label: 'الحماية',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history_toggle_off_rounded),
+            label: 'السجلات',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart_rounded),

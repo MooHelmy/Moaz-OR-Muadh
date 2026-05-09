@@ -1,10 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-class NotificationService {
-  static final NotificationService _instance = NotificationService._internal();
-  factory NotificationService() => _instance;
-  NotificationService._internal();
+class AppNotificationService {
+  static final AppNotificationService _instance =
+      AppNotificationService._internal();
+  factory AppNotificationService() => _instance;
+  AppNotificationService._internal();
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -17,22 +18,21 @@ class NotificationService {
   Future<void> init() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings(
-          'ic_launcher',
-        ); // استخدام الاسم مباشرة بدون @mipmap
+      'ic_launcher',
+    ); // استخدام الاسم مباشرة بدون @mipmap
 
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings();
 
     const InitializationSettings initializationSettings =
         InitializationSettings(
-          android: initializationSettingsAndroid,
-          iOS: initializationSettingsDarwin,
-        );
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
+    );
 
     // 4. Register Callback (لما المستخدم يدوس على الإشعار)
     await _notificationsPlugin.initialize(
-      settings:
-          initializationSettings, // تم إزالة 'settings:' لأنها ليست معلمة مسماة
+      initializationSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
@@ -69,14 +69,14 @@ class NotificationService {
   // تحديد الـ Channel (Senior Approach: تعريفه كـ ثابت لسهولة التعديل)
   static const AndroidNotificationDetails _androidDetails =
       AndroidNotificationDetails(
-        'shield_channel_id', // ID فريد
-        'Shield Notifications', // اسم القناة اللي بيظهر للمستخدم في الإعدادات
-        channelDescription: 'Notifications for protection and security alerts',
-        importance: Importance.max,
-        priority: Priority.high,
-        playSound: true,
-        icon: 'ic_launcher',
-      );
+    'shield_channel_id', // ID فريد
+    'Shield Notifications', // اسم القناة اللي بيظهر للمستخدم في الإعدادات
+    channelDescription: 'Notifications for protection and security alerts',
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+    icon: 'ic_launcher',
+  );
 
   static const NotificationDetails _notificationDetails = NotificationDetails(
     android: _androidDetails,
@@ -91,10 +91,10 @@ class NotificationService {
     String? payload,
   }) async {
     await _notificationsPlugin.show(
-      id: id,
-      title: title,
-      body: body,
-      notificationDetails: _notificationDetails,
+      id,
+      title,
+      body,
+      _notificationDetails,
       payload: payload,
     );
   }
