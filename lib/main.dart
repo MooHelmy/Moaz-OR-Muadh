@@ -19,10 +19,12 @@ void main() async {
   await Hive.initFlutter();
   await Hive.openBox('scanned_hashes');
   await Hive.openBox('decisions');
+  await Hive.openBox('deleted_log'); // ✅ سجل المحذوفات المحلي
 
-  // ✅ compact عند كل بدء للتطبيق عشان المساحة
+  // compact عند كل بدء لتحرير المساحة
   Hive.box('scanned_hashes').compact();
   Hive.box('decisions').compact();
+  Hive.box('deleted_log').compact();
 
   await Firebase.initializeApp();
 

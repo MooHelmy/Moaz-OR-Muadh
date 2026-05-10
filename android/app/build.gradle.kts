@@ -3,12 +3,12 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    // ✅ apply:true — بيطبّق الـ plugin على الـ app module
     id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.example.muadh"
+    // ✅ 36 مطلوب من shared_preferences_android
     compileSdk = 36
 
     ndkVersion = "28.2.13676358"
@@ -26,20 +26,21 @@ android {
     defaultConfig {
         applicationId = "com.example.muadh"
         minSdk = 24
+        // ✅ targetSdk = 35 (مش 36) عشان لا تحتاج صلاحيات API 36 الجديدة
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
         debug {
             isDebuggable = true

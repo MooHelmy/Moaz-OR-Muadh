@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -9,6 +10,7 @@ import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 const String _reset = '\x1B[0m';
@@ -16,9 +18,18 @@ const String _red = '\x1B[31m';
 const String _green = '\x1B[32m';
 const String _yellow = '\x1B[33m';
 const String _blue = '\x1B[34m';
+const String _cyan = '\x1B[36m';
+const String _bold = '\x1B[1m';
 
-// ✅ عدد الـ frames المطلوب فحصها من كل فيديو
-const int _videoFrameCount = 8;
+// ✅ 8 فريمات بتوزيع ذكي حسب مدة الفيديو
+const int _framesPerVideo = 8;
+
+// ─── debug mode ──────────────────────────────────────────────
+// في debug mode: يظهر اسم الملف + نتيجة كل فريم + القرار النهائي
+// في release mode: لا شيء
+const bool kDebugScan = kDebugMode;
+
+const int _concurrentFiles = 3;
 
 class ScanQueue {
   final EnsembleScorer scorer;
@@ -26,8 +37,9 @@ class ScanQueue {
   final DeleteManager deleteManager;
   final ScanNotificationService notifier;
 
+  final Set<String> _pendingSet = {};
   final List<String> _queue = [];
-  bool _isProcessing = false;
+  int _activeWorkers = 0;
 
   ScanQueue({
     required this.scorer,
@@ -37,22 +49,30 @@ class ScanQueue {
   });
 
   int get pendingCount => _queue.length;
-  bool get isProcessing => _isProcessing;
+  bool get isProcessing => _activeWorkers > 0 || _queue.isNotEmpty;
 
   void add(String path) {
-    if (!_queue.contains(path)) {
+    if (!_pendingSet.contains(path)) {
+      _pendingSet.add(path);
       _queue.add(path);
-      _processNext();
+      _trySpawnWorker();
     }
   }
 
-  Future<void> _processNext() async {
-    if (_isProcessing || _queue.isEmpty) return;
-    _isProcessing = true;
+  void _trySpawnWorker() {
+    if (_activeWorkers >= _concurrentFiles || _queue.isEmpty) return;
+
+    _activeWorkers++;
+
     final path = _queue.removeAt(0);
-    await _processFile(path);
-    _isProcessing = false;
-    _processNext();
+    _pendingSet.remove(path);
+
+    _processFile(path).whenComplete(() {
+      _activeWorkers--;
+      _trySpawnWorker();
+    });
+
+    _trySpawnWorker();
   }
 
   Future<void> dispose() async {
@@ -73,21 +93,30 @@ class ScanQueue {
   }
 
   // ─── VIDEO ──────────────────────────────────────────────
-  // ✅ بيستخرج _videoFrameCount frames من الفيديو ويفحصهم
-  // لو أي frame REJECT → يحذف الفيديو فوراً
   Future<void> _processVideo(String videoPath) async {
-    debugPrint(
-        '$_blue🎥 Processing video: ${videoPath.split('/').last}$_reset');
+    final fileName = videoPath.split('/').last;
+
+    if (kDebugScan) {
+      debugPrint('');
+      debugPrint(
+          '$_bold$_blue╔══════════════════════════════════════════════════╗$_reset');
+      debugPrint(
+          '$_bold$_blue║  🎥  VIDEO SCAN                                   ║$_reset');
+      debugPrint('$_bold$_blue║  📄  $fileName$_reset');
+      debugPrint(
+          '$_bold$_blue╚══════════════════════════════════════════════════╝$_reset');
+    } else {
+      debugPrint('${_blue}🎥 Processing video: $fileName$_reset');
+    }
 
     final file = File(videoPath);
     if (!await file.exists()) return;
 
-    // ✅ check hash أولاً عشان ما نفحصش نفس الفيديو مرتين
-    final hash = await _getFileHash(file);
+    final hash = await _getPartialHash(file);
+
     final hashesBox = Hive.box('scanned_hashes');
-    if (hashesBox.values.contains(hash)) {
-      debugPrint(
-          '⏭️ Already scanned (hash match): ${videoPath.split('/').last}');
+    if (hashesBox.get(hash) != null) {
+      debugPrint('⏭️ Already scanned (hash match): $fileName');
       return;
     }
 
@@ -96,60 +125,89 @@ class ScanQueue {
     bool isNsfw = false;
 
     try {
-      // استخراج الـ frames بالتوازي عشان يكون أسرع
-      final futures = <Future<String?>>[];
-      for (int i = 0; i < _videoFrameCount; i++) {
-        // نوزع الـ frames على طول الفيديو
-        // timeMs = null → بيختار تلقائياً، لكن بنستخدم i * offset
-        futures.add(_extractFrame(videoPath, tempDir.path, i));
+      // ✅ توزيع ذكي: 8 فريمات بناءً على مدة الفيديو
+      final timestamps = await _generateFrameTimestamps(videoPath);
+
+      if (kDebugScan) {
+        debugPrint(
+            '$_cyan   📊 Frame plan: ${timestamps.length} frames$_reset');
       }
 
-      final results = await Future.wait(futures);
-      for (final fp in results) {
-        if (fp != null) framePaths.add(fp);
-      }
+      for (int i = 0; i < timestamps.length; i++) {
+        final timeMs = timestamps[i];
+        final fp = await _extractFrame(videoPath, tempDir.path, timeMs);
 
-      if (framePaths.isEmpty) {
-        debugPrint('⚠️ No frames extracted from: $videoPath');
-        await hashesBox.add(hash);
-        return;
-      }
+        if (fp == null) {
+          if (kDebugScan) {
+            debugPrint(
+                '$_yellow   ⚠️  Frame ${i + 1}@${timeMs}ms → extraction failed$_reset');
+          }
+          continue;
+        }
 
-      debugPrint('📸 Extracted ${framePaths.length} frames from video');
+        framePaths.add(fp);
 
-      // ✅ القاعدة: لو NSFW > SFW في أي frame → حذف فوري
-      // مش بنستخدم threshold ثابت — بنقارن الاحتمالين مباشرة
-      for (int i = 0; i < framePaths.length; i++) {
-        final framePath = framePaths[i];
-        final scoredResult = await scorer.score(framePath);
-
+        final scoredResult = await scorer.score(fp);
         final nsfw = scoredResult.rawNsfw.nsfw;
         final sfw = scoredResult.rawNsfw.sfw;
-        // ✅ الشرط الوحيد: هل الموديل شايفه NSFW أكتر من SFW؟
         final frameIsNsfw = nsfw > sfw;
 
-        debugPrint('   Frame $i → NSFW=${nsfw.toStringAsFixed(3)}'
+        if (kDebugScan) {
+          final label = _frameLabel(i, timestamps.length);
+          final verdict = frameIsNsfw
+              ? '${_red}🔴 REJECT$_reset'
+              : '${_green}✅ SAFE  $_reset';
+          debugPrint(
+            '   Frame ${(i + 1).toString().padLeft(2)} [$label] @${timeMs}ms'
+            ' │ NSFW=${nsfw.toStringAsFixed(3)}'
             ' SFW=${sfw.toStringAsFixed(3)}'
-            ' → ${frameIsNsfw ? "REJECT🔴" : "SAFE✅"}');
+            ' Skin=${scoredResult.skinScore.toStringAsFixed(3)}'
+            ' Face=${scoredResult.faceScore.toStringAsFixed(3)}'
+            ' │ $verdict',
+          );
+        }
 
+        // 🔥 early exit — فريم واحد NSFW يكفي
         if (frameIsNsfw) {
           isNsfw = true;
-          break; // frame واحد يكفي
+          break;
         }
       }
 
-      // قرار نهائي على الفيديو
+      if (framePaths.isEmpty) {
+        debugPrint('⚠️ No frames extracted from: $fileName');
+        await hashesBox.put(hash, 1);
+        return;
+      }
+
+      // ─── Debug Summary ────────────────────────────────
+      if (kDebugScan) {
+        debugPrint('   ─────────────────────────────────────────────────────');
+        debugPrint(
+            '   📸 Scanned   : ${framePaths.length} / ${timestamps.length} frames');
+        final verdictStr = isNsfw
+            ? '${_red}🔴 NSFW → REJECT$_reset'
+            : '${_green}✅ SAFE  → ACCEPT$_reset';
+        debugPrint('   🏁 Verdict   : $verdictStr');
+        debugPrint('   ─────────────────────────────────────────────────────');
+        debugPrint('');
+      } else {
+        debugPrint(
+          '📸 Scanned ${framePaths.length} frames → '
+          '${isNsfw ? "NSFW🔴" : "SAFE✅"}',
+        );
+      }
+
       if (isNsfw) {
-        debugPrint('$_red🔥 VIDEO REJECTED → deleting: $videoPath$_reset');
+        debugPrint('${_red}🔥 VIDEO REJECTED → deleting$_reset');
         final deleted = await deleteManager.deleteImmediately(videoPath);
         if (deleted) await notifier.showDeletedNotification(videoPath);
       } else {
-        debugPrint('$_green✅ VIDEO SAFE: ${videoPath.split('/').last}$_reset');
+        debugPrint('${_green}✅ VIDEO SAFE: $fileName$_reset');
       }
 
-      await hashesBox.add(hash);
+      await hashesBox.put(hash, 1);
     } finally {
-      // ✅ امسح الـ frames المؤقتة دايماً
       for (final fp in framePaths) {
         try {
           File(fp).deleteSync();
@@ -158,110 +216,195 @@ class ScanQueue {
     }
   }
 
-  Future<String?> _extractFrame(
-      String videoPath, String tempDir, int index) async {
-    try {
-      // نوزع الـ timestamps على طول الفيديو: 10%, 20%, ... 90%
-      // video_thumbnail بيدعم timeMs بس مش بيعرف duration → نستخدم position أرقام ثابتة
-      // نستخدم null لأول frame و positions مختلفة للباقي
-      final timeMs = index == 0 ? 0 : (index * 5000); // كل 5 ثواني
+  // ──────────────────────────────────────────────────────────────
+  // ✅ توزيع ذكي للفريمات الـ 8 حسب مدة الفيديو:
+  //
+  //   Frame 1 → بعد 10 ثواني من البداية     (تجنب الـ intro الأبيض)
+  //   Frame 2 → 15% من المدة
+  //   Frame 3 → 30% من المدة
+  //   Frame 4 → 40% من المدة
+  //   Frame 5 → 50% من المدة (المنتصف)
+  //   Frame 6 → 60% من المدة
+  //   Frame 7 → 75% من المدة
+  //   Frame 8 → قبل النهاية بـ 15 ثانية     (قبل الـ outro)
+  //
+  //   لو الفيديو < 20 ثانية → توزيع بالتساوي تلقائياً
+  // ──────────────────────────────────────────────────────────────
+  Future<List<int>> _generateFrameTimestamps(String videoPath) async {
+    // ✅ نحاول نجيب المدة من VideoPlayerController
+    // لو فشل في الـ background isolate نستخدم fixed fallback timestamps
+    int durationMs = 0;
 
-      final path = await VideoThumbnail.thumbnailFile(
+    try {
+      final controller = VideoPlayerController.file(File(videoPath));
+      await controller.initialize();
+      durationMs = controller.value.duration.inMilliseconds;
+      await controller.dispose();
+    } catch (e) {
+      debugPrint(
+          '⚠️ Duration via VideoPlayer failed: $e → using fixed timestamps');
+    }
+
+    // ✅ لو مش عارفين المدة → timestamps ثابتة متنوعة
+    // video_thumbnail بيرجع null تلقائياً لو الـ timestamp أكبر من المدة
+    if (durationMs <= 0) {
+      return [0, 5000, 10000, 20000, 30000, 60000, 120000, 180000];
+    }
+
+    // فيديو قصير جداً (< 20s) → توزيع بالتساوي
+    if (durationMs < 20000) {
+      final step = durationMs ~/ (_framesPerVideo + 1);
+      return List.generate(
+        _framesPerVideo,
+        (i) => (step * (i + 1)).clamp(0, durationMs - 1),
+      );
+    }
+
+    final ts = <int>[];
+
+    // Frame 1: 10% من المدة لو < 100s، وإلا 10 ثواني ثابتة
+    final frame1 = durationMs < 100000 ? (durationMs * 0.10).toInt() : 10000;
+    ts.add(frame1.clamp(0, durationMs - 1));
+
+    // Frames 2-7: نسب ثابتة من المدة
+    for (final pct in [0.15, 0.30, 0.40, 0.50, 0.60, 0.75]) {
+      ts.add((durationMs * pct).toInt().clamp(0, durationMs - 1));
+    }
+
+    // Frame 8: قبل النهاية (15s أو 10% لو الفيديو < 60s)
+    final endOffset = durationMs < 60000 ? (durationMs * 0.10).toInt() : 15000;
+    ts.add((durationMs - endOffset).clamp(0, durationMs - 1));
+
+    return ts.toSet().toList()..sort();
+  }
+
+  // label للـ debug
+  String _frameLabel(int index, int total) {
+    if (index == 0) return 'START+10s';
+    if (index == total - 1) return 'END-15s  ';
+    const pcts = [
+      '  15%    ',
+      '  30%    ',
+      '  40%    ',
+      '  50%MID ',
+      '  60%    ',
+      '  75%    '
+    ];
+    final mid = index - 1;
+    return mid < pcts.length ? pcts[mid] : '${index + 1}/$total     ';
+  }
+
+  Future<String?> _extractFrame(
+    String videoPath,
+    String tempDir,
+    int timeMs,
+  ) async {
+    try {
+      return await VideoThumbnail.thumbnailFile(
         video: videoPath,
         thumbnailPath: tempDir,
         imageFormat: ImageFormat.JPEG,
         timeMs: timeMs,
         quality: 75,
       );
-      return path;
     } catch (e) {
-      debugPrint('⚠️ Frame extraction failed (index=$index): $e');
+      debugPrint('⚠️ Frame extraction failed (timeMs=$timeMs): $e');
       return null;
     }
   }
 
-  // ─── IMAGE ──────────────────────────────────────────────
+  // ─── IMAGE ────────────────────────────────────────────
   Future<void> _processImage(String path) async {
     final file = File(path);
     if (!await file.exists()) return;
 
     final stat = await file.stat();
-    if (stat.size < 10240) return; // أصغر من 10KB → تجاهل
+    if (stat.size < 10240) return;
 
-    // ✅ تحقق من الـ Hash
-    final hash = await _getFileHash(file);
+    final hash = await _getPartialHash(file);
+
     final hashesBox = Hive.box('scanned_hashes');
-    if (hashesBox.values.contains(hash)) {
+    if (hashesBox.get(hash) != null) {
       debugPrint('⏭️ Already scanned: ${path.split('/').last}');
       return;
     }
 
     final fileName = path.split('/').last;
-    debugPrint('$_reset-----------------------------------------------');
-    debugPrint('🔍 Scanning: $_blue$fileName$_reset');
 
-    final scoredResult = await scorer.score(path);
-    final decision = engine.decide(scoredResult, scoredResult.rawNsfw);
-
-    // ✅ احفظ القرار في Hive
-    final decisionsBox = Hive.box('decisions');
-
-    // ✅ حل مشكلة المساحة: خزّن بيانات مبسطة بس
-    // مش بنخزن الـ path الطويل كـ key، بنخزن الـ hash بس
-    await decisionsBox.put(hash.substring(0, 16), {
-      's': decision.result.name[0], // 'a', 'r', 'v' — حرف واحد بدل كلمة
-      't': DateTime.now().millisecondsSinceEpoch, // int بدل string
-      'w': (scoredResult.weighted * 1000).round(), // int بدل double
-    });
-
-    String resultColor;
-    switch (decision.result) {
-      case DecisionResult.accept:
-        resultColor = _green;
-        break;
-      case DecisionResult.review:
-        resultColor = _yellow;
-        break;
-      case DecisionResult.reject:
-        resultColor = _red;
-        break;
+    if (kDebugScan) {
+      debugPrint('');
+      debugPrint(
+          '$_bold$_cyan╔══════════════════════════════════════════════════╗$_reset');
+      debugPrint(
+          '$_bold$_cyan║  🖼️  IMAGE SCAN                                   ║$_reset');
+      debugPrint('$_bold$_cyan║  📄  $fileName$_reset');
+      debugPrint(
+          '$_bold$_cyan╚══════════════════════════════════════════════════╝$_reset');
     }
 
-    debugPrint('   ↳ 🔞 NSFW:  ${scoredResult.rawNsfw}');
-    debugPrint('   ↳ 👤 Skin:  ${scoredResult.skinScore.toStringAsFixed(3)}');
-    debugPrint('   ↳ 🎭 Face:  ${scoredResult.faceScore.toStringAsFixed(3)}');
-    debugPrint('   ↳ 📈 TOTAL: ${scoredResult.weighted.toStringAsFixed(3)}');
-    debugPrint(
-        '   ↳ ⚖️ RESULT: $resultColor${decision.result.name.toUpperCase()} (${decision.reason})$_reset');
-    debugPrint('$_reset-----------------------------------------------');
+    final scoredResult = await scorer.score(path);
+    final decision =
+        engine.decide(scoredResult, scoredResult.rawNsfw, filePath: path);
+
+    if (kDebugScan) {
+      debugPrint(
+          '   NSFW Score  : ${scoredResult.rawNsfw.nsfw.toStringAsFixed(3)}');
+      debugPrint(
+          '   SFW Score   : ${scoredResult.rawNsfw.sfw.toStringAsFixed(3)}');
+      debugPrint(
+          '   Skin Ratio  : ${scoredResult.skinScore.toStringAsFixed(3)}');
+      debugPrint(
+          '   Face Score  : ${scoredResult.faceScore.toStringAsFixed(3)}');
+      debugPrint(
+          '   Weighted    : ${scoredResult.weighted.toStringAsFixed(3)}');
+      debugPrint('   ─────────────────────────────────────────────────────');
+
+      final verdictStr = switch (decision.result) {
+        DecisionResult.reject =>
+          '${_red}🔴 REJECT — ${decision.reason} (${(decision.confidence * 100).toStringAsFixed(1)}%)$_reset',
+        DecisionResult.accept =>
+          '${_green}✅ ACCEPT (conf=${(decision.confidence * 100).toStringAsFixed(1)}%)$_reset',
+        DecisionResult.review =>
+          '${_yellow}🟡 REVIEW (conf=${(decision.confidence * 100).toStringAsFixed(1)}%)$_reset',
+      };
+      debugPrint('   🏁 Decision  : $verdictStr');
+      debugPrint('');
+    }
 
     if (decision.result == DecisionResult.reject) {
       final deleted = await deleteManager.deleteImmediately(path);
       if (deleted) await notifier.showDeletedNotification(path);
     }
 
-    await hashesBox.add(hash);
+    await hashesBox.put(hash, 1);
 
-    // ✅ تنظيف دوري لـ Hive: لو الـ hashesBox وصل 5000 مدخلة → امسح القديم
-    _cleanupHiveIfNeeded(hashesBox);
+    // ✅ حفظ الـ anchor بعد ما الصورة اتسكانت فعلاً
   }
 
-  // ─── Hive Cleanup ───────────────────────────────────────
-  // ✅ حل مشكلة المساحة: امسح الـ hashes القديمة لو كتر عددها
-  void _cleanupHiveIfNeeded(Box hashesBox) {
-    const maxEntries = 5000;
-    if (hashesBox.length > maxEntries) {
-      final keysToDelete =
-          hashesBox.keys.take(hashesBox.length - maxEntries).toList();
-      hashesBox.deleteAll(keysToDelete);
-      // compact بعد الحذف عشان المساحة تترجع فعلاً
-      hashesBox.compact();
-      debugPrint('🧹 Hive cleanup: deleted ${keysToDelete.length} old hashes');
+  // ─── HASH ────────────────────────────────────────────
+  Future<String> _getPartialHash(File file) async {
+    const chunkSize = 64 * 1024;
+
+    final size = await file.length();
+
+    if (size <= chunkSize * 2) {
+      final bytes = await file.readAsBytes();
+      return sha256.convert(bytes).toString();
     }
-  }
 
-  Future<String> _getFileHash(File file) async {
-    final bytes = await file.readAsBytes();
-    return sha256.convert(bytes).toString();
+    final raf = await file.open();
+
+    try {
+      final head = await raf.read(chunkSize);
+
+      await raf.setPosition(size - chunkSize);
+      final tail = await raf.read(chunkSize);
+
+      final combined = [...head, ...tail];
+
+      return sha256.convert(combined).toString();
+    } finally {
+      await raf.close();
+    }
   }
 }

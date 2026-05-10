@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // For compute
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:medi_guard/core/utils/notifications_services_old.dart';
@@ -13,7 +14,6 @@ class BlocksDetailsViewBody extends StatefulWidget {
 class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
   List<Map<String, dynamic>> blockedItems = [];
   bool isLoading = true;
-  int maxCount = 0;
   final AppNotificationService notificationService = AppNotificationService();
 
   @override
@@ -45,42 +45,18 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
       return;
     }
 
-    Map<String, Map<String, dynamic>> groupedData = {};
-    List<String> entries = rawLogs.split(';');
-
-    for (var entry in entries) {
-      if (entry.isEmpty) continue;
-      List<String> parts = entry.split('|');
-      if (parts.length < 3) continue;
-
-      try {
-        String name = parts[0];
-        int timestamp = int.tryParse(parts[1]) ?? 0;
-        bool isUrl = parts[2] == 'true';
-
-        if (groupedData.containsKey(name)) {
-          groupedData[name]!['count'] += 1;
-          if (timestamp > groupedData[name]!['timestamp']) {
-            groupedData[name]!['timestamp'] = timestamp;
-          }
-        } else {
-          groupedData[name] = {
-            "name": name,
-            "timestamp": timestamp,
-            "count": 1,
-            "isUrl": isUrl,
-          };
-        }
-      } catch (e) {
-        debugPrint("Error parsing log entry: $e");
-      }
-    }
+    // نقل عملية تحليل السجلات إلى Isolate منفصل لمنع تباطؤ واجهة المستخدم
+    final List<Map<String, dynamic>> parsedItems =
+        await compute(_parseLogsInIsolate, rawLogs);
 
     setState(() {
-      blockedItems = groupedData.values.toList();
+      blockedItems = parsedItems;
       blockedItems.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
       isLoading = false;
     });
+
+    // التحقق من الإشعارات وعرضها بعد تحميل السجلات وفرزها
+    _checkAndShowNotifications(blockedItems);
   }
 
   // دالة مسح السجل وإظهار الرسالة
@@ -128,16 +104,6 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
       itemCount: blockedItems.length,
       itemBuilder: (context, index) {
         final item = blockedItems[index];
-        maxCount = int.parse(item['count'].toString());
-        if (maxCount >= 100) {
-          notificationService.showInstantNotification(
-            id: DateTime.now().microsecondsSinceEpoch % 1000000,
-            title:
-                "هذه الكلمة تم حجبها اكثر من ${item['count']} مرة ${notificationService.strikethrough(item['name'])}  🛡️",
-            body: "اتقى الله هذا يكفى لا تستخدمها 😭 ولاتبحث عنها مرة اخرى",
-          );
-        }
-
         return _buildProfessionalBlockCard(item);
       },
     );
@@ -250,5 +216,65 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
         ),
       ),
     );
+  }
+}
+
+// دالة علوية (Top-level function) لـ Isolate لتحليل السجلات
+// يجب أن تكون هذه الدالة ثابتة (static) أو دالة علوية لاستخدامها مع compute.
+List<Map<String, dynamic>> _parseLogsInIsolate(String rawLogs) {
+  Map<String, Map<String, dynamic>> groupedData = {};
+  List<String> entries = rawLogs.split(';');
+
+  for (var entry in entries) {
+    if (entry.isEmpty) continue;
+    List<String> parts = entry.split('|');
+    if (parts.length < 3) continue;
+
+    try {
+      String name = parts[0];
+      int timestamp = int.tryParse(parts[1]) ?? 0;
+      bool isUrl = parts[2] == 'true';
+
+      if (groupedData.containsKey(name)) {
+        groupedData[name]!['count'] += 1;
+        if (timestamp > groupedData[name]!['timestamp']) {
+          groupedData[name]!['timestamp'] = timestamp;
+        }
+      } else {
+        groupedData[name] = {
+          "name": name,
+          "timestamp": timestamp,
+          "count": 1,
+          "isUrl": isUrl,
+        };
+      }
+    } catch (e) {
+      // في Isolate، قد لا تكون debugPrint مرئية مباشرة في جميع السياقات.
+      // استخدام print للتسجيل الأساسي.
+      print("Error parsing log entry in isolate: $e");
+    }
+  }
+  return groupedData.values.toList();
+}
+
+// دالة للتحقق من الإشعارات وعرضها، يتم استدعاؤها بعد تحميل السجلات
+extension on BlocksDetailsViewBodyState {
+  void _checkAndShowNotifications(List<Map<String, dynamic>> items) {
+    // يجب أن يتتبع هذا المنطق الإشعارات التي تم عرضها بالفعل
+    // لتجنب عرضها بشكل متكرر في كل مرة يتم فيها تحميل السجلات.
+    // للتبسيط، هذا المثال ينقل المنطق فقط.
+    for (var item in items) {
+      int count = item['count'];
+      if (count >= 100) {
+        final int notificationId =
+            item['name'].hashCode.abs(); // معرف فريد لكل عنصر
+        notificationService.showInstantNotification(
+          id: notificationId,
+          title:
+              "هذه الكلمة تم حجبها اكثر من ${item['count']} مرة ${notificationService.strikethrough(item['name'])}  🛡️",
+          body: "اتقى الله هذا يكفى لا تستخدمها 😭 ولاتبحث عنها مرة اخرى",
+        );
+      }
+    }
   }
 }

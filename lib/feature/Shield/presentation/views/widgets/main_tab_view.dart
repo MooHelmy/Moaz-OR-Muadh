@@ -48,7 +48,7 @@ class _MainTabViewState extends State<MainTabView> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.history_toggle_off_rounded),
-            label: 'السجلات',
+            label: 'سجل الحماية',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart_rounded),

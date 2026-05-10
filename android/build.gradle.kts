@@ -5,7 +5,6 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // ✅ google-services لازم يتحط هنا في الـ root
         classpath("com.google.gms:google-services:4.4.2")
     }
 }
@@ -14,6 +13,17 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+    }
+}
+
+// ✅ Fix: compileSdk = 36 لكل المكتبات
+// بنستخدم allprojects بدل subprojects + afterEvaluate
+// عشان afterEvaluate بيتعارض مع evaluationDependsOn(:app)
+allprojects {
+    plugins.withId("com.android.library") {
+        extensions.configure(com.android.build.gradle.LibraryExtension::class) {
+            compileSdk = 36
+        }
     }
 }
 
