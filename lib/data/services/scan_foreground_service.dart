@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:firebase_core/firebase_core.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -28,6 +28,8 @@ class ScanServiceManager {
         channelDescription:
             'This notification appears when the foreground service is running.',
         onlyAlertOnce: true,
+        channelImportance:
+            NotificationChannelImportance.LOW, // ✅ Corrected name and enum
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
@@ -92,6 +94,7 @@ void startScanCallback() {
 // ─────────────────────────────────────────────
 class ScanTaskHandler extends TaskHandler {
   ScanQueue? _queue;
+  final Battery _battery = Battery();
   bool _ready = false;
   int _repeatCount = 0;
   // ✅ flag عشان الـ sweep الأولي يتعمل مرة واحدة بس
@@ -107,9 +110,13 @@ class ScanTaskHandler extends TaskHandler {
   Future<void> _initializeServices() async {
     try {
       await Hive.initFlutter();
-      await Firebase.initializeApp();
-      await Hive.openBox('scanned_hashes');
-      await Hive.openBox('decisions');
+      // await Firebase.initializeApp();
+      await Future.wait([
+        Hive.openBox('scanned_hashes'),
+        Hive.openBox('decisions'),
+        Hive.openBox('scan_stats'),
+        Hive.openBox('deleted_log'),
+      ]);
       debugPrint('✅ Hive + Firebase ready');
 
       final nsfwService = NsfwService();
@@ -144,12 +151,15 @@ class ScanTaskHandler extends TaskHandler {
   // ─── onReceiveData  ────────────────────────
   // الملفات الجديدة جاية من FileObserver عبر FlutterForegroundTask.sendDataToTask
   @override
-  void onReceiveData(Object data) {
+  Future<void> onReceiveData(Object data) async {
     if (data is! String) return;
-    debugPrint('📩 onReceiveData → $data');
 
-    if (!_ready) {
-      debugPrint('⚠️ Queue not ready yet — skipping $data');
+    if (!_ready || _queue == null) return;
+
+    // ✅ Adaptive Throttling based on battery
+    final level = await _battery.batteryLevel;
+    if (level < 15) {
+      debugPrint('🔋 Low Battery ($level%): Skipping scan to save energy');
       return;
     }
 

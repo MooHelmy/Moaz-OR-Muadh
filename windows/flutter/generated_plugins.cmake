@@ -3,8 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  cloud_firestore
-  firebase_core
+  battery_plus
   flutter_onnxruntime
   permission_handler_windows
 )

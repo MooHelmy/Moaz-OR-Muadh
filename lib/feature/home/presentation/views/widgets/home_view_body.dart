@@ -9,22 +9,34 @@ class HomeViewBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        CustomHomeHeader(), // Custom Widget 1
-        SafeArea(
-          child: Column(
-            children: [
-              CustomTopBar(), // Custom Widget 2
-              SizedBox(height: 20),
-              CustomShieldCounter(days: 5), // Custom Widget 3
-              Spacer(),
-              CustomVerseCard(), // Custom Widget 4
-              SizedBox(height: 40),
-            ],
-          ),
-        ),
-      ],
+    // ✅ FIX #24: LayoutBuilder للـ responsiveness بدلاً من قيم ثابتة
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenHeight = constraints.maxHeight;
+        final isSmallScreen = screenHeight < 700;
+
+        return Stack(
+          // ✅ FIX #25: clipBehavior للـ performance
+          clipBehavior: Clip.hardEdge,
+          children: [
+            CustomHomeHeader(),
+            SafeArea(
+              child: Column(
+                children: [
+                  CustomTopBar(),
+                  // ✅ FIX #26: SizedBox adaptive بدل ثابت
+                  SizedBox(height: isSmallScreen ? 12 : 20),
+                  CustomShieldCounter(days: 5),
+                  const Spacer(),
+                  CustomVerseCard(),
+                  // ✅ FIX #26: padding responsive
+                  SizedBox(height: isSmallScreen ? 20 : 40),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

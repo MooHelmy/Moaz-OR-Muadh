@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -17,7 +16,6 @@ class DeleteManager {
       }
 
       // سجّل في Firebase قبل الحذف
-      await _logDeletion(filePath);
 
       // ✅ حاول الحذف الـ native أولاً (أقوى وأضمن على Android 11+)
       bool deleted = false;
@@ -48,27 +46,27 @@ class DeleteManager {
     }
   }
 
-  Future<void> _logDeletion(String path) async {
-    try {
-      await FirebaseFirestore.instance.collection('deleted_files').add({
-        'path': path,
-        'fileName': path.split('/').last,
-        'deletedAt': DateTime.now().toIso8601String(),
-        'source': _detectSource(path),
-      });
-    } catch (_) {}
-  }
+  // Future<void> _logDeletion(String path) async {
+  //   try {
+  //     await FirebaseFirestore.instance.collection('deleted_files').add({
+  //       'path': path,
+  //       'fileName': path.split('/').last,
+  //       'deletedAt': DateTime.now().toIso8601String(),
+  //       'source': _detectSource(path),
+  //     });
+  //   } catch (_) {}
+  // }
 
-  String _detectSource(String path) {
-    if (path.contains('whatsapp') || path.contains('WhatsApp'))
-      return 'WhatsApp';
-    if (path.contains('telegram') || path.contains('Telegram'))
-      return 'Telegram';
-    if (path.contains('Download')) return 'Downloads';
-    if (path.contains('DCIM')) return 'Camera';
-    if (path.contains('Instagram')) return 'Instagram';
-    if (path.contains('TikTok')) return 'TikTok';
-    if (path.contains('Facebook')) return 'Facebook';
-    return 'Unknown';
-  }
+  // String _detectSource(String path) {
+  //   if (path.contains('whatsapp') || path.contains('WhatsApp'))
+  //     return 'WhatsApp';
+  //   if (path.contains('telegram') || path.contains('Telegram'))
+  //     return 'Telegram';
+  //   if (path.contains('Download')) return 'Downloads';
+  //   if (path.contains('DCIM')) return 'Camera';
+  //   if (path.contains('Instagram')) return 'Instagram';
+  //   if (path.contains('TikTok')) return 'TikTok';
+  //   if (path.contains('Facebook')) return 'Facebook';
+  //   return 'Unknown';
+  // }
 }

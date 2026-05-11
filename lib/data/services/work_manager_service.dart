@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
 import 'package:medi_guard/data/services/face_service.dart';
@@ -48,7 +47,7 @@ void callbackDispatcher() {
 
 Future<void> _runDeepScan() async {
   await Hive.initFlutter();
-  await Firebase.initializeApp();
+
   await Hive.openBox('scanned_hashes');
 
   final nsfwService = NsfwService();
