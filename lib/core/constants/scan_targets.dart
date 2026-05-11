@@ -53,6 +53,10 @@ class ScanTargets {
   ];
 
   static bool isMediaFile(String path) {
+    final fileName = path.split('/').last;
+    // تجاهل الملفات المخفية أو الملفات المؤقتة التي تبدأ بـ . (مثل .pending)
+    if (fileName.startsWith('.')) return false;
+
     return isImage(path) || isVideo(path);
   }
 

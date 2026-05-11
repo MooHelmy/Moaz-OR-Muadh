@@ -3,6 +3,8 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:medi_guard/core/constants/scan_targets.dart';
+import 'package:medi_guard/data/services/file_observer_channel.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/data/services/work_manager_service.dart';
@@ -76,6 +78,9 @@ class MuadhApp extends StatelessWidget {
           // ✅ FIX #6: ScanServiceManager.start() خارج UI callback في Bootstrap
           home: PermissionScreen(
             onGranted: () async {
+              // ✅ بدء مراقبة المجلدات فور منح الصلاحيات
+              await FileObserverChannel.startWatching(ScanTargets.folders);
+
               await ScanServiceManager.start();
               navigatorKey.currentState?.pushReplacement(
                 MaterialPageRoute(builder: (_) => const MainTabView()),

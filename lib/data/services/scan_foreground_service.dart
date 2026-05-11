@@ -29,7 +29,7 @@ class ScanServiceManager {
             'This notification appears when the foreground service is running.',
         onlyAlertOnce: true,
         channelImportance:
-            NotificationChannelImportance.LOW, // ✅ Corrected name and enum
+            NotificationChannelImportance.LOW, // ✅ التسمية الصحيحة لإصدار 9.2.2
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
@@ -96,6 +96,8 @@ class ScanTaskHandler extends TaskHandler {
   ScanQueue? _queue;
   final Battery _battery = Battery();
   bool _ready = false;
+  int _lastBatteryCheck = 0;
+  bool _isLowBattery = false;
   int _repeatCount = 0;
   // ✅ flag عشان الـ sweep الأولي يتعمل مرة واحدة بس
 
@@ -141,8 +143,9 @@ class ScanTaskHandler extends TaskHandler {
       _ready = true;
       debugPrint('✅ ScanQueue ready — listening for files');
 
-      // ← اسكان أولي فور الجهوزية
-      await _sweepAllFolders();
+      // ✅ إصلاح: تشغيل المسح الشامل في الخلفية بدون await
+      // لكي تظل الخدمة مستعدة لاستقبال الملفات الجديدة فوراً
+      _sweepAllFolders();
     } catch (e, stack) {
       debugPrint('❌ _initializeServices ERROR: $e\n$stack');
     }
@@ -151,21 +154,30 @@ class ScanTaskHandler extends TaskHandler {
   // ─── onReceiveData  ────────────────────────
   // الملفات الجديدة جاية من FileObserver عبر FlutterForegroundTask.sendDataToTask
   @override
-  Future<void> onReceiveData(Object data) async {
+  void onReceiveData(Object data) {
     if (data is! String) return;
 
     if (!_ready || _queue == null) return;
 
-    // ✅ Adaptive Throttling based on battery
-    final level = await _battery.batteryLevel;
-    if (level < 15) {
-      debugPrint('🔋 Low Battery ($level%): Skipping scan to save energy');
+    // ✅ تحسين: فحص البطارية مرة كل 5 دقائق بدلاً من فحصها مع كل ملف
+    // لأن استدعاء batteryLevel مكلف ويؤخر الاستجابة
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastBatteryCheck > 300000) {
+      _battery.batteryLevel.then((level) {
+        _isLowBattery = level < 15;
+        _lastBatteryCheck = now;
+      });
+    }
+
+    if (_isLowBattery) {
+      debugPrint('🔋 Skipping scan due to low battery');
       return;
     }
 
-    if (ScanTargets.isImage(data) || ScanTargets.isVideo(data)) {
-      debugPrint('📥 Queuing: $data');
-      _queue!.add(data);
+    // استخدام isMediaFile لفحص الامتداد وتجاهل الملفات المؤقتة (.pending)
+    if (ScanTargets.isMediaFile(data)) {
+      debugPrint('🔥 PRIORITY SCAN: ملف جديد مكتشف الآن ← $data');
+      _queue?.add(data, priority: true); // ✅ وضعه في مقدمة الطابور فوراً
     } else {
       debugPrint('⏭️ Not a media file → skipped');
     }
@@ -198,9 +210,7 @@ class ScanTaskHandler extends TaskHandler {
 
       // ✅ recursive: true عشان نمسك الفيديوهات في Sent/ وباقي السب-فولدرات
       await for (final entity in dir.list(recursive: true)) {
-        if (entity is File &&
-            (ScanTargets.isImage(entity.path) ||
-                ScanTargets.isVideo(entity.path))) {
+        if (entity is File && ScanTargets.isMediaFile(entity.path)) {
           allFiles.add(entity);
         }
       }

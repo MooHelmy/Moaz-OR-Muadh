@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
@@ -24,6 +25,9 @@ const bool kDebugScan = kDebugMode;
 // ✅ FIX #13: Adaptive concurrency بدلاً من ثابت = 3
 // على الأجهزة الضعيفة نخفف، على القوية نزيد
 const int _concurrentFiles = 2; // آمن على كل الأجهزة
+
+const MethodChannel _mediaScannerChannel =
+    MethodChannel('medi_guard/media_scanner');
 
 class ScanQueue {
   final EnsembleScorer scorer;
@@ -73,11 +77,15 @@ class ScanQueue {
     _trySpawnWorker();
   }
 
-  void add(String path) {
+  void add(String path, {bool priority = false}) {
     if (_cancelled) return;
     if (!_pendingSet.contains(path)) {
       _pendingSet.add(path);
-      _queue.add(path);
+      if (priority) {
+        _queue.insert(0, path); // ✅ وضعه في أول القائمة ليفحص فوراً
+      } else {
+        _queue.add(path); // المسح العادي يضاف للآخر
+      }
       _trySpawnWorker();
     }
   }
@@ -197,7 +205,10 @@ class ScanQueue {
         debugPrint('$_red🔥 VIDEO REJECTED → deleting$_reset');
         final deleted = await deleteManager.deleteImmediately(videoPath);
         if (deleted) {
-          await _logDeletion(videoPath);
+          await Future.wait([
+            _logDeletion(videoPath),
+            _notifyMediaScanner(videoPath),
+          ]);
           await notifier.showDeletedNotification(videoPath);
         }
       }
@@ -271,7 +282,10 @@ class ScanQueue {
     if (decision.result == DecisionResult.reject && !_cancelled) {
       final deleted = await deleteManager.deleteImmediately(path);
       if (deleted) {
-        await _logDeletion(path);
+        await Future.wait([
+          _logDeletion(path),
+          _notifyMediaScanner(path),
+        ]);
         await notifier.showDeletedNotification(path);
       }
     }
@@ -334,6 +348,15 @@ class ScanQueue {
       });
     } catch (e) {
       debugPrint('❌ Failed to log deletion: $e');
+    }
+  }
+
+  // ✅ وظيفة لتحديث معرض الصور (Media Store) بعد الحذف لإزالة "الأشباح"
+  Future<void> _notifyMediaScanner(String path) async {
+    try {
+      await _mediaScannerChannel.invokeMethod('scanFile', {'path': path});
+    } catch (e) {
+      debugPrint('⚠️ Media Scanner Notification failed: $e');
     }
   }
 
