@@ -184,7 +184,11 @@ class _MonitoringBody extends StatelessWidget {
                     ? ((totalScanned - totalBlocked) / totalScanned * 100)
                         .round()
                     : 100;
-                final blockedPercent = 100 - safePercent;
+                final blockedPercent = totalScanned > 0 ? 100 - safePercent : 0;
+                final safeCount = totalScanned - totalBlocked;
+
+                // جلب إحصائيات الفولدرات مرة واحدة لاستخدامها في أكثر من مكان
+                final folderStats = _getFolderStats();
 
                 return ValueListenableBuilder(
                   valueListenable: Hive.box('deleted_log').listenable(),
@@ -238,37 +242,33 @@ class _MonitoringBody extends StatelessWidget {
             if (folderStats.isEmpty) return const SliverToBoxAdapter();
             return SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverMainAxisGroup(
-                slivers: [
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: _SectionHeader(
-                          title: 'الفولدرات المفحوصة',
-                          icon: Icons.folder_special_rounded),
-                    ),
-                  ),
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final f = folderStats[index];
-                        return _FolderStatCard(
-                          key: ValueKey('folder_${f['name']}'),
-                          name: f['name'] as String,
-                          total: f['total'] as int,
-                          blocked: f['blocked'] as int,
-                          safe: f['safe'] as int,
-                          images: f['images'] as int,
-                          videos: f['videos'] as int,
-                          lastScan: _timeAgo(f['lastScan'] as int),
-                          icon: _folderIcon(f['name'] as String),
-                          color: _folderColor(f['name'] as String),
-                        );
-                      },
-                      childCount: folderStats.length,
-                    ),
-                  ),
-                ],
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (index == 0) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: _SectionHeader(
+                            title: 'الفولدرات المفحوصة',
+                            icon: Icons.folder_special_rounded),
+                      );
+                    }
+                    final f = folderStats[index - 1];
+                    return _FolderStatCard(
+                      key: ValueKey('folder_${f['name']}'),
+                      name: f['name'] as String,
+                      total: f['total'] as int,
+                      blocked: f['blocked'] as int,
+                      safe: f['safe'] as int,
+                      images: f['images'] as int,
+                      videos: f['videos'] as int,
+                      lastScan: _timeAgo(f['lastScan'] as int),
+                      icon: _folderIcon(f['name'] as String),
+                      color: _folderColor(f['name'] as String),
+                    );
+                  },
+                  childCount: folderStats.length + 1,
+                ),
               ),
             );
           },

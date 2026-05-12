@@ -19,13 +19,11 @@ class _PermissionScreenState extends State<PermissionScreen> {
     _checkIfAlreadyGranted();
   }
 
-  // ✅ لو سبق ومنح الصلاحيات، انطلق مباشرة بدون ما تسأل تاني
   Future<void> _checkIfAlreadyGranted() async {
     final prefs = await SharedPreferences.getInstance();
     final alreadyGranted = prefs.getBool('permissions_granted') ?? false;
 
     if (alreadyGranted) {
-      // تحقق إن الصلاحية فعلاً لازالت موجودة (المستخدم ممكن يسحبها من الإعدادات)
       final storageOk = await Permission.manageExternalStorage.isGranted ||
           await Permission.storage.isGranted;
 
@@ -35,25 +33,20 @@ class _PermissionScreenState extends State<PermissionScreen> {
       }
     }
 
-    // لو مش granted → ورّي شاشة الطلب
     if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _requestAll() async {
-    // Android 11+
     if (await Permission.manageExternalStorage.isDenied) {
       await Permission.manageExternalStorage.request();
     }
-    // Android 10 وأقل
     await Permission.storage.request();
-    // Notifications (Android 13+)
     await Permission.notification.request();
 
     final storageGranted = await Permission.manageExternalStorage.isGranted ||
         await Permission.storage.isGranted;
 
     if (storageGranted) {
-      // ✅ احفظ إن الصلاحيات اتمنحت عشان مش نسأل تاني
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('permissions_granted', true);
       widget.onGranted();
@@ -64,7 +57,6 @@ class _PermissionScreenState extends State<PermissionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // شاشة loading مؤقتة ريثما نتحقق
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),

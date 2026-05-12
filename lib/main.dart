@@ -13,27 +13,24 @@ import 'package:medi_guard/feature/media_bloc/presentation/views/permission_scre
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// ✅ FIX #1: AppBootstrapper منفصل عن main() — Clean Architecture
 class AppBootstrapper {
   static bool _initialized = false;
 
   static Future<void> initialize() async {
-    if (_initialized) return; // ✅ FIX #2: منع التهيئة المتكررة
+    if (_initialized) return;
     _initialized = true;
 
     WidgetsFlutterBinding.ensureInitialized();
     FlutterForegroundTask.initCommunicationPort();
 
-    // ✅ FIX #3: فتح كل Hive Boxes بالتوازي بدلاً من Sequential
     await Hive.initFlutter();
     await Future.wait([
       Hive.openBox('scanned_hashes'),
       Hive.openBox('decisions'),
       Hive.openBox('deleted_log'),
-      Hive.openBox('scan_stats'), // ✅ صندوق الإحصائيات الجديد
+      Hive.openBox('scan_stats'),
     ]);
 
-    // ✅ FIX #4: compact فقط لو الصندوق كبير (تجنب I/O زائد عند كل launch)
     _compactIfNeeded('scanned_hashes', threshold: 500);
     _compactIfNeeded('decisions', threshold: 200);
     _compactIfNeeded('deleted_log', threshold: 100);
@@ -41,7 +38,6 @@ class AppBootstrapper {
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
 
-    // ✅ FIX #5: WorkManager initialize مرة واحدة فقط
     await WorkManagerService.initialize();
     await WorkManagerService.schedulePeriodicScan();
 
@@ -75,12 +71,9 @@ class MuadhApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'معاذ',
           navigatorKey: navigatorKey,
-          // ✅ FIX #6: ScanServiceManager.start() خارج UI callback في Bootstrap
           home: PermissionScreen(
             onGranted: () async {
-              // ✅ بدء مراقبة المجلدات فور منح الصلاحيات
               await FileObserverChannel.startWatching(ScanTargets.folders);
-
               await ScanServiceManager.start();
               navigatorKey.currentState?.pushReplacement(
                 MaterialPageRoute(builder: (_) => const MainTabView()),
