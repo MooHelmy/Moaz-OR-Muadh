@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:battery_plus/battery_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
@@ -20,7 +19,6 @@ import 'package:medi_guard/domain/scanning/scan_queue.dart';
 // ─────────────────────────────────────────────
 class ScanServiceManager {
   static Future<void> initialize() async {
-    debugPrint('🔧 ScanServiceManager: initializing...');
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'foreground_service',
@@ -45,37 +43,29 @@ class ScanServiceManager {
         allowWifiLock: true,
       ),
     );
-    debugPrint('✅ ScanServiceManager: initialized');
   }
 
   static Future<void> start() async {
-    debugPrint('🚀 ScanServiceManager: starting...');
-
     if (await FlutterForegroundTask.isRunningService) {
-      debugPrint('♻️ Already running → restart');
       await FlutterForegroundTask.restartService();
     } else {
       await FlutterForegroundTask.startService(
         serviceId: 1001,
         notificationTitle: 'معاذ',
-        notificationText: 'يحمي جهازك من المحتوى الإباحي',
+        notificationText: '',
         callback: startScanCallback,
       );
-      debugPrint('✅ Foreground service started');
     }
 
     // FileObserver → لازم يشتغل من الـ main isolate (مش من TaskHandler)
     try {
       await FileObserverChannel.startWatching(ScanTargets.folders);
-      debugPrint(
-          '✅ FileObserver watching ${ScanTargets.folders.length} folders');
     } catch (e) {
-      debugPrint('⚠️ FileObserver failed: $e');
+      // FileObserver failed
     }
   }
 
   static Future<void> stop() async {
-    debugPrint('🛑 Stopping foreground service...');
     await FlutterForegroundTask.stopService();
   }
 }
@@ -85,7 +75,6 @@ class ScanServiceManager {
 // ─────────────────────────────────────────────
 @pragma('vm:entry-point')
 void startScanCallback() {
-  debugPrint('📡 startScanCallback: setting task handler');
   FlutterForegroundTask.setTaskHandler(ScanTaskHandler());
 }
 
@@ -104,7 +93,6 @@ class ScanTaskHandler extends TaskHandler {
   // ─── onStart ────────────────────────────────
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
-    debugPrint('▶️ ScanTaskHandler.onStart at $timestamp');
     _initializeServices();
   }
 
@@ -119,15 +107,12 @@ class ScanTaskHandler extends TaskHandler {
         Hive.openBox('scan_stats'),
         Hive.openBox('deleted_log'),
       ]);
-      debugPrint('✅ Hive + Firebase ready');
 
       final nsfwService = NsfwService();
       await nsfwService.initialize(); // يحمّل الـ ONNX model
-      debugPrint('✅ NsfwService ready');
 
       final notifier = ScanNotificationService();
       await notifier.initialize();
-      debugPrint('✅ NotificationService ready');
 
       _queue = ScanQueue(
         scorer: EnsembleScorer(
@@ -141,13 +126,12 @@ class ScanTaskHandler extends TaskHandler {
       );
 
       _ready = true;
-      debugPrint('✅ ScanQueue ready — listening for files');
 
       // ✅ إصلاح: تشغيل المسح الشامل في الخلفية بدون await
       // لكي تظل الخدمة مستعدة لاستقبال الملفات الجديدة فوراً
       _sweepAllFolders();
     } catch (e, stack) {
-      debugPrint('❌ _initializeServices ERROR: $e\n$stack');
+      // _initializeServices error
     }
   }
 
@@ -170,16 +154,12 @@ class ScanTaskHandler extends TaskHandler {
     }
 
     if (_isLowBattery) {
-      debugPrint('🔋 Skipping scan due to low battery');
       return;
     }
 
     // استخدام isMediaFile لفحص الامتداد وتجاهل الملفات المؤقتة (.pending)
     if (ScanTargets.isMediaFile(data)) {
-      debugPrint('🔥 PRIORITY SCAN: ملف جديد مكتشف الآن ← $data');
       _queue?.add(data, priority: true); // ✅ وضعه في مقدمة الطابور فوراً
-    } else {
-      debugPrint('⏭️ Not a media file → skipped');
     }
   }
 
@@ -188,11 +168,6 @@ class ScanTaskHandler extends TaskHandler {
   @override
   void onRepeatEvent(DateTime timestamp) {
     _repeatCount++;
-    debugPrint(
-      '🔁 #$_repeatCount | ready=$_ready'
-      ' | queue=${_queue?.pendingCount ?? "N/A"}'
-      ' | processing=${_queue?.isProcessing ?? "N/A"}',
-    );
     // ✅ الـ sweep الأولي اتعمل في _initializeServices
     // مش محتاجين نعيده كل 30 ثانية — FileObserver هو اللي بيجيب الجديد
   }
@@ -228,15 +203,11 @@ class ScanTaskHandler extends TaskHandler {
     for (final file in allFiles) {
       _queue!.add(file.path);
     }
-
-    debugPrint(
-        '🔍 Sweep: ${allFiles.length} files queued (newest first) from ${ScanTargets.folders.length} folders');
   }
 
   // ─── onDestroy ────────────────────────────
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    debugPrint('🔴 onDestroy — isTimeout=$isTimeout');
     await _queue?.dispose();
     _ready = false;
   }

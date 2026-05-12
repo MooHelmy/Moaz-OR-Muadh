@@ -185,10 +185,8 @@ class _MonitoringBody extends StatelessWidget {
                         .round()
                     : 100;
                 final blockedPercent = totalScanned > 0 ? 100 - safePercent : 0;
-                final safeCount = totalScanned - totalBlocked;
 
                 // جلب إحصائيات الفولدرات مرة واحدة لاستخدامها في أكثر من مكان
-                final folderStats = _getFolderStats();
 
                 return ValueListenableBuilder(
                   valueListenable: Hive.box('deleted_log').listenable(),

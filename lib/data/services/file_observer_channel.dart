@@ -17,7 +17,6 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
@@ -80,7 +79,6 @@ class FileObserverChannel {
   /// آمن للاستدعاء المتعدد: يتجاهل إذا كان يعمل بالفعل.
   static Future<void> startWatching(List<String> folders) async {
     if (_isWatching) {
-      debugPrint('📁 FileObserver: already watching — skipping');
       return;
     }
 
@@ -89,9 +87,7 @@ class FileObserverChannel {
         'startWatching',
         {'folders': folders},
       );
-      debugPrint('✅ FileObserver: native watching ${folders.length} folders');
     } on PlatformException catch (e) {
-      debugPrint('❌ FileObserver: startWatching failed: ${e.message}');
       return;
     }
 
@@ -105,7 +101,6 @@ class FileObserverChannel {
   /// يوقف المراقبة ويُنظّف كل الموارد.
   static Future<void> stopWatching() async {
     if (!_isWatching) return;
-    debugPrint('🛑 FileObserver: stopping...');
 
     _isWatching = false;
     _retryCount = 0;
@@ -137,10 +132,8 @@ class FileObserverChannel {
     try {
       await _methodChannel.invokeMethod<void>('stopWatching');
     } on PlatformException catch (e) {
-      debugPrint('⚠️ FileObserver: stopWatching native error: ${e.message}');
+      // stopWatching native error
     }
-
-    debugPrint('✅ FileObserver: stopped cleanly');
   }
 
   /// Stream مباشر للـ UI — lazy + broadcast + deduplicated + debounced.
@@ -182,30 +175,22 @@ class FileObserverChannel {
       onError: _onStreamError,
       cancelOnError: false, // ✅ لا تلغي الـ sub عند خطأ واحد
     );
-
-    debugPrint('✅ FileObserver: subscribed to file events');
   }
 
   static void _onFileEvent(String filePath) {
     // ── Rate limiting ──────────────────────────────────────────────────────
     if (_eventCountThisSecond >= _ObsCfg.maxEventsPerSecond) {
-      debugPrint('🚦 FileObserver: rate limit hit — dropping $filePath');
       return;
     }
     _eventCountThisSecond++;
-
-    debugPrint('📩 FileObserver → TaskHandler: $filePath');
     FlutterForegroundTask.sendDataToTask(filePath);
   }
 
   static void _onStreamError(Object error, StackTrace stack) {
-    debugPrint('⚠️ FileObserver: stream error: $error');
-
     if (!_isWatching) return; // إذا أوقفناها عمداً → لا retry
 
     _retryCount++;
     if (_retryCount > _ObsCfg.maxRetries) {
-      debugPrint('❌ FileObserver: max retries reached — giving up');
       return;
     }
 
@@ -216,10 +201,6 @@ class FileObserverChannel {
 
     // ── Exponential backoff retry ──────────────────────────────────────────
     final delay = _ObsCfg.retryBaseDelay * (1 << (_retryCount - 1));
-    debugPrint(
-      '🔄 FileObserver: retry $_retryCount/${_ObsCfg.maxRetries}'
-      ' in ${delay.inSeconds}s',
-    );
 
     Timer(delay, () {
       if (_isWatching) _subscribe();
@@ -244,10 +225,6 @@ class FileObserverChannel {
         final keys = _recentlySeen.keys.take(toRemove).toList();
         keys.forEach(_recentlySeen.remove);
       }
-
-      debugPrint(
-        '🧹 FileObserver dedup flush: ${_recentlySeen.length} entries remain',
-      );
     });
   }
 

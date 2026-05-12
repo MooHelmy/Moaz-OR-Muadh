@@ -21,7 +21,6 @@ class _ProgressViewState extends State<ProgressView> {
   Widget build(BuildContext context) {
     return const Scaffold(
       appBar: CustomProgressAppBar(),
-      backgroundColor: Color(0xFFF8F9FA),
       body: ProgressViewBody(),
     );
   }

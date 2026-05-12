@@ -19,9 +19,7 @@ class _MainTabViewState extends State<MainTabView> {
   void initState() {
     super.initState();
     // ✅ FIX #20: fetchAndSyncBlacklist مع error handling
-    AiBlacklistService.fetchAndSyncBlacklist().catchError((e) {
-      debugPrint('⚠️ Blacklist sync failed: $e');
-    });
+    AiBlacklistService.fetchAndSyncBlacklist();
   }
 
   @override

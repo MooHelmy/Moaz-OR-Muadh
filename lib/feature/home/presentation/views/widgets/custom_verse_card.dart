@@ -9,7 +9,7 @@ class CustomVerseCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 25),
       padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(

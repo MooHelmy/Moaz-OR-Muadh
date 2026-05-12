@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
+import 'package:medi_guard/core/theme/app_theme.dart';
+import 'package:medi_guard/core/theme/theme_provider.dart';
 import 'package:medi_guard/data/services/file_observer_channel.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
@@ -57,11 +59,13 @@ void main() async {
   runApp(const ProviderScope(child: MuadhApp()));
 }
 
-class MuadhApp extends StatelessWidget {
+class MuadhApp extends ConsumerWidget {
   const MuadhApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDarkMode = ref.watch(themeNotifierProvider);
+
     return ScreenUtilInit(
       designSize: const Size(360, 690),
       minTextAdapt: true,
@@ -71,6 +75,9 @@ class MuadhApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'معاذ',
           navigatorKey: navigatorKey,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: PermissionScreen(
             onGranted: () async {
               await FileObserverChannel.startWatching(ScanTargets.folders);

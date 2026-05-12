@@ -108,14 +108,7 @@ abstract final class _Log {
   static void _out(String icon, String msg, [Object? err]) {
     final line =
         err != null ? '$icon $_tag $msg\n    ↳ $err' : '$icon $_tag $msg';
-
-    // في debug mode — debugPrint مشان يظهر في console.
-    // في release — استبدل بـ Crashlytics.instance.log() أو Sentry.
-    if (kDebugMode) {
-      debugPrint(line);
-    } else {
-      print(line); // production logging hook
-    }
+    print(line);
   }
 }
 

@@ -1,0 +1,25 @@
+// لاستخدام نظام الثيم في التطبيق:
+
+// 1. في الـ UI widgets، استخدم Theme.of(context) أو Theme.of(context).colorScheme
+// مثال:
+// final primaryColor = Theme.of(context).primaryColor;
+// final textColor = Theme.of(context).textTheme.bodyLarge?.color;
+
+// 2. لتبديل الثيم:
+// في Consumer widget:
+// final isDarkMode = ref.watch(themeNotifierProvider);
+// await ref.read(themeNotifierProvider.notifier).toggleTheme();
+
+// 3. لإضافة زر تبديل الثيم:
+// import 'package:medi_guard/core/theme/theme_toggle_button.dart';
+// ThemeToggleButton()
+
+// 4. الألوان المخصصة في AppColors:
+// import 'package:medi_guard/core/theme/app_colors.dart';
+// AppColors.primaryLight
+// AppColors.primaryDark
+// AppColors.success
+// إلخ...
+
+// 5. الثيم محفوظ تلقائياً في SharedPreferences
+// يتم تحميل الإعدادات عند بدء التطبيق

@@ -56,21 +56,54 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text("أدخل رمز الحماية"),
-            content: TextField(
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              onChanged: (v) => input = v,
-              decoration: const InputDecoration(
-                hintText: "الرمز السري (0000)",
-                border: OutlineInputBorder(),
-              ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.lock_person_rounded,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                const Text("تأكيد الهوية"),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("أدخل الرمز السري لإدارة إعدادات الحماية"),
+                const SizedBox(height: 20),
+                TextField(
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  onChanged: (v) => input = v,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      letterSpacing: 8,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
+                  decoration: InputDecoration(
+                    hintText: "••••",
+                    hintStyle: TextStyle(color: Theme.of(context).hintColor),
+                    filled: true,
+                    fillColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withOpacity(0.3),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text("إلغاء"),
+                child: Text("إلغاء",
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary)),
               ),
               ElevatedButton(
                 onPressed: () {
@@ -79,15 +112,23 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
                     Navigator.pop(context, true);
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("رمز خاطئ! لا يمكن إيقاف الحماية."),
-                        backgroundColor: Colors.red,
+                      SnackBar(
+                        content:
+                            const Text("رمز خاطئ! لا يمكن تعديل الإعدادات."),
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.all(16),
                       ),
                     );
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF064E3B),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Text(
                   "تأكيد",

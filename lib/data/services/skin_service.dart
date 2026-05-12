@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
 class SkinResult {
@@ -30,9 +29,6 @@ class SkinService {
     }
 
     final ratio = skinPixels / totalPixels;
-    debugPrint('Skin ratio → ${ratio.toStringAsFixed(3)} '
-        '($skinPixels/$totalPixels pixels)');
-
     return SkinResult(ratio: ratio);
   }
 

@@ -31,15 +31,15 @@ final class BlockedItem {
   });
 
   final String name;
-  final int    timestamp;
-  final int    count;
-  final bool   isUrl;
+  final int timestamp;
+  final int count;
+  final bool isUrl;
 
   /// Safe factory من raw map — لا force unwrap
   static BlockedItem? tryFromMap(Map<String, dynamic> map) {
     final name = map['name'];
-    final ts   = map['timestamp'];
-    final cnt  = map['count'];
+    final ts = map['timestamp'];
+    final cnt = map['count'];
     final isUrl = map['isUrl'];
 
     if (name is! String || ts is! int || cnt is! int || isUrl is! bool) {
@@ -72,9 +72,9 @@ class BlocksDetailsViewBody extends StatefulWidget {
 }
 
 class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
-  List<BlockedItem> _items   = const [];
-  bool _isLoading            = true;
-  bool _loadScheduled        = false; // throttle للـ _loadLogs
+  List<BlockedItem> _items = const [];
+  bool _isLoading = true;
+  bool _loadScheduled = false; // throttle للـ _loadLogs
 
   final _notificationService = AppNotificationService();
   // ✅ memoization للـ timeFormat — لا يُنشأ من جديد كل build
@@ -113,7 +113,11 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     final rawLogs = prefs.getString('shield_logs') ?? '';
 
     if (rawLogs.isEmpty) {
-      if (mounted) setState(() { _items = const []; _isLoading = false; });
+      if (mounted)
+        setState(() {
+          _items = const [];
+          _isLoading = false;
+        });
       return;
     }
 
@@ -131,7 +135,10 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     _timeCache.clear();
 
     if (mounted) {
-      setState(() { _items = items; _isLoading = false; });
+      setState(() {
+        _items = items;
+        _isLoading = false;
+      });
       _checkAndShowNotifications(items);
     }
   }
@@ -166,7 +173,8 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
     // ✅ memoized format — لا إعادة حساب لنفس الـ timestamp
     return _timeCache.putIfAbsent(
       timestamp,
-      () => _timeFormatter.format(DateTime.fromMillisecondsSinceEpoch(timestamp)),
+      () =>
+          _timeFormatter.format(DateTime.fromMillisecondsSinceEpoch(timestamp)),
     );
   }
 
@@ -175,8 +183,7 @@ class BlocksDetailsViewBodyState extends State<BlocksDetailsViewBody> {
       if (item.count >= 100) {
         _notificationService.showInstantNotification(
           id: item.name.hashCode.abs(),
-          title:
-              'هذه الكلمة تم حجبها اكثر من ${item.count} مرة '
+          title: 'هذه الكلمة تم حجبها اكثر من ${item.count} مرة '
               '${_notificationService.strikethrough(item.name)} 🛡️',
           body: 'اتقى الله هذا يكفى لا تستخدمها 😭 ولاتبحث عنها مرة اخرى',
         );
@@ -246,13 +253,13 @@ class _BlockCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accentColor = item.isUrl ? Colors.redAccent : Colors.orangeAccent;
-    final iconColor   = item.isUrl ? Colors.red[700]  : Colors.orange[700];
-    final bgColor     = item.isUrl ? Colors.red        : Colors.orange;
+    final iconColor = item.isUrl ? Colors.red[700] : Colors.orange[700];
+    final bgColor = item.isUrl ? Colors.red : Colors.orange;
 
     return Container(
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24.r),
         boxShadow: [
           BoxShadow(
@@ -268,7 +275,9 @@ class _BlockCard extends StatelessWidget {
           children: [
             // ✅ الشريط الجانبي الملوَّن
             Positioned(
-              right: 0, top: 0, bottom: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
               width: 6.w,
               child: ColoredBox(color: accentColor),
             ),
@@ -300,7 +309,7 @@ class _BlockCard extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15.sp,
-                            color: const Color(0xFF1F2937),
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
                           ),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
@@ -380,9 +389,9 @@ List<Map<String, dynamic>> _parseLogsInIsolate(String rawLogs) {
     if (parts.length < 3) continue;
 
     try {
-      final name      = parts[0];
+      final name = parts[0];
       final timestamp = int.tryParse(parts[1]) ?? 0;
-      final isUrl     = parts[2] == 'true';
+      final isUrl = parts[2] == 'true';
 
       // ✅ Safe map access — لا force unwrap
       final existing = grouped[name];
@@ -393,14 +402,14 @@ List<Map<String, dynamic>> _parseLogsInIsolate(String rawLogs) {
         }
       } else {
         grouped[name] = {
-          'name'     : name,
+          'name': name,
           'timestamp': timestamp,
-          'count'    : 1,
-          'isUrl'    : isUrl,
+          'count': 1,
+          'isUrl': isUrl,
         };
       }
     } catch (e) {
-      debugPrint('_parseLogsInIsolate error: $e');
+      // parseLogsInIsolate error
     }
   }
 

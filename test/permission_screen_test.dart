@@ -10,6 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('PermissionScreen', () {
+    // ignore: unused_local_variable
     late MockSharedPreferences mockPrefs;
 
     setUp(() {
@@ -34,6 +35,7 @@ void main() {
 
     testWidgets('shows permission request UI after loading',
         (WidgetTester tester) async {
+      // ignore: unused_local_variable
       bool onGrantedCalled = false;
 
       await tester.pumpWidget(

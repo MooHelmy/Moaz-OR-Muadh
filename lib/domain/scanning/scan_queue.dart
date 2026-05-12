@@ -57,23 +57,19 @@ class ScanQueue {
   // ✅ FIX: Added missing methods for battery and performance management
   void pauseForBattery() {
     _isPaused = true;
-    debugPrint('⏸️ ScanQueue: Paused (Battery Optimization)');
   }
 
   void resumeFromBattery() {
     _isPaused = false;
-    debugPrint('▶️ ScanQueue: Resumed (Power Restored)');
     _trySpawnWorker();
   }
 
   void pauseHeavyTasks() {
     _isPaused = true;
-    debugPrint('⏸️ ScanQueue: Paused (High System Load)');
   }
 
   void resumeHeavyTasks() {
     _isPaused = false;
-    debugPrint('▶️ ScanQueue: Resumed');
     _trySpawnWorker();
   }
 
@@ -137,7 +133,7 @@ class ScanQueue {
         await _processImage(path);
       }
     } catch (e) {
-      debugPrint('❌ ScanQueue Error for $path: $e');
+      // ScanQueue Error
     }
   }
 
@@ -146,9 +142,7 @@ class ScanQueue {
     if (_cancelled) return;
     final fileName = videoPath.split('/').last;
 
-    if (kDebugScan) {
-      debugPrint('$_bold${_blue}🎥 VIDEO: $fileName$_reset');
-    }
+    if (kDebugScan) {}
 
     final file = File(videoPath);
     if (!await file.exists()) return;
@@ -157,7 +151,6 @@ class ScanQueue {
     final hashesBox = Hive.box('scanned_hashes');
 
     if (hashesBox.get(hash) != null) {
-      debugPrint('⏭️ Already scanned: $fileName');
       return;
     }
 
@@ -182,11 +175,6 @@ class ScanQueue {
         final nsfw = scoredResult.rawNsfw.nsfw;
         final sfw = scoredResult.rawNsfw.sfw;
 
-        if (kDebugScan) {
-          debugPrint(
-              '  Frame ${i + 1}@${timeMs}ms → NSFW=${nsfw.toStringAsFixed(3)} SFW=${sfw.toStringAsFixed(3)}');
-        }
-
         if (nsfw > sfw) {
           isNsfw = true;
           break; // ✅ Early exit — فريم واحد NSFW يكفي
@@ -202,7 +190,6 @@ class ScanQueue {
       await _recordScanStat(videoPath, isNsfw: isNsfw, isVideo: true);
 
       if (isNsfw && !_cancelled) {
-        debugPrint('$_red🔥 VIDEO REJECTED → deleting$_reset');
         final deleted = await deleteManager.deleteImmediately(videoPath);
         if (deleted) {
           await Future.wait([
@@ -262,7 +249,6 @@ class ScanQueue {
     final hashesBox = Hive.box('scanned_hashes');
 
     if (hashesBox.get(hash) != null) {
-      debugPrint('⏭️ Already scanned: ${path.split('/').last}');
       return;
     }
 
@@ -270,10 +256,7 @@ class ScanQueue {
     final decision =
         engine.decide(scoredResult, scoredResult.rawNsfw, filePath: path);
 
-    if (kDebugScan) {
-      debugPrint(
-          '🖼️ ${path.split('/').last} → ${decision.result.name} (${(decision.confidence * 100).toStringAsFixed(1)}%)');
-    }
+    if (kDebugScan) {}
 
     // ✅ تسجيل في الإحصائيات
     await _recordScanStat(path,
@@ -332,7 +315,7 @@ class ScanQueue {
         totalStats['blocked'] = (totalStats['blocked'] as int? ?? 0) + 1;
       await statsBox.put(totalKey, totalStats);
     } catch (e) {
-      debugPrint('⚠️ Stats recording failed: $e');
+      // Stats recording failed
     }
   }
 
@@ -347,7 +330,7 @@ class ScanQueue {
         'path': path,
       });
     } catch (e) {
-      debugPrint('❌ Failed to log deletion: $e');
+      // Failed to log deletion
     }
   }
 
@@ -356,7 +339,7 @@ class ScanQueue {
     try {
       await _mediaScannerChannel.invokeMethod('scanFile', {'path': path});
     } catch (e) {
-      debugPrint('⚠️ Media Scanner Notification failed: $e');
+      // Media Scanner Notification failed
     }
   }
 
