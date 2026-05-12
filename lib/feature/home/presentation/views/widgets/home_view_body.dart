@@ -30,15 +30,15 @@ class HomeViewBody extends StatelessWidget {
                     const CustomTopBar(),
                     // ✅ FIX #26: SizedBox adaptive بدل ثابت
                     SizedBox(height: isSmallScreen ? 12 : 20),
-                    const CustomShieldCounter(days: 5),
+                    const CustomShieldCounter(),
                     const SizedBox(height: 25),
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: CustomRankCard(rankName: "مُحارب طاهر"),
+                      child: CustomRankCard(),
                     ),
                     const SizedBox(height: 12),
                     const CustomDetailsTimerFutureBuilder(),
-                    const SizedBox(height: 25),
+                    const SizedBox(height: 15),
                     const CustomVerseCard(),
                     // ✅ FIX #26: padding responsive
                     SizedBox(height: isSmallScreen ? 20 : 40),

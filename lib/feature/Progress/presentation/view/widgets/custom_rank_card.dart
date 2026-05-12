@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:medi_guard/core/utils/shared_preferences_service.dart';
 
 class CustomRankCard extends StatefulWidget {
-  final String rankName;
-  const CustomRankCard({super.key, required this.rankName});
+  const CustomRankCard({super.key});
 
   @override
   State<CustomRankCard> createState() => _CustomRankCardState();
 }
 
-late String rankName;
 List<String> ranks = [
   "مُبتدئ النور",
   "مُحارب الفطرة",
@@ -24,24 +22,44 @@ List<String> ranks = [
 ];
 
 class _CustomRankCardState extends State<CustomRankCard> {
-  initState() async {
+  int rankIndex = 0;
+  String rankName = ranks[0];
+
+  @override
+  void initState() {
     super.initState();
-    var usageDurationdays = await SharePreferencesService.getUsageDuration()
-        .then((value) => value["days"]); //
-    getRankIndex(usageDurationdays!);
-    rankName = ranks[getRankIndex(usageDurationdays)];
+    _loadRankIndex();
   }
 
-  int getRankIndex(int days) {
-    if (0 < days && days < 5) return 0;
-    if (5 <= days && days < 14) return 1;
-    if (14 <= days && days < 30) return 2;
-    if (30 <= days && days < 60) return 3;
-    if (60 <= days && days < 90) return 4;
-    if (90 <= days && days < 180) return 5;
-    if (180 <= days && days < 365) return 6;
-    if (365 <= days && days < 730) return 7;
-    return 9; // أكثر من سنتين
+  Future<void> _loadRankIndex() async {
+    final usageDuration = await SharePreferencesService.getUsageDuration();
+    final loadedDays = usageDuration["days"] ?? 0;
+    int newIndex;
+
+    if (loadedDays < 5) {
+      newIndex = 0;
+    } else if (5 <= loadedDays && loadedDays < 14) {
+      newIndex = 1;
+    } else if (14 <= loadedDays && loadedDays < 30) {
+      newIndex = 2;
+    } else if (30 <= loadedDays && loadedDays < 60) {
+      newIndex = 3;
+    } else if (60 <= loadedDays && loadedDays < 90) {
+      newIndex = 4;
+    } else if (90 <= loadedDays && loadedDays < 180) {
+      newIndex = 5;
+    } else if (180 <= loadedDays && loadedDays < 365) {
+      newIndex = 6;
+    } else {
+      newIndex = 7;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      rankIndex = newIndex;
+      rankName = ranks[newIndex];
+    });
   }
 
   @override

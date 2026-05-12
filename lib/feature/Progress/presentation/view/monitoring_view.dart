@@ -12,31 +12,16 @@ class MonitoringView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0F1E),
-      body: ValueListenableBuilder(
-        valueListenable: Hive.box('deleted_log').listenable(),
-        builder: (context, Box deletedBox, _) {
-          return ValueListenableBuilder(
-            valueListenable: Hive.box('scan_stats').listenable(),
-            builder: (context, Box statsBox, _) {
-              return _MonitoringBody(
-                deletedBox: deletedBox,
-                statsBox: statsBox,
-              );
-            },
-          );
-        },
-      ),
+      body: const _MonitoringBody(),
     );
   }
 }
 
 class _MonitoringBody extends StatelessWidget {
-  final Box deletedBox;
-  final Box statsBox;
-
-  const _MonitoringBody({required this.deletedBox, required this.statsBox});
+  const _MonitoringBody();
 
   Map<String, dynamic> _getTotalStats() {
+    final statsBox = Hive.box('scan_stats');
     final raw = statsBox.get('total_stats') as Map?;
     return {
       'scanned': raw?['scanned'] as int? ?? 0,
@@ -45,6 +30,7 @@ class _MonitoringBody extends StatelessWidget {
   }
 
   List<Map<String, dynamic>> _getFolderStats() {
+    final statsBox = Hive.box('scan_stats');
     final folders = <Map<String, dynamic>>[];
     for (final key in statsBox.keys) {
       if (key.toString().startsWith('folder_')) {
@@ -128,18 +114,8 @@ class _MonitoringBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalStats = _getTotalStats();
-    final folderStats = _getFolderStats();
-    final deletedEntries = deletedBox.values.toList().reversed.toList();
-    final totalScanned = totalStats['scanned'] as int;
-    final totalBlocked = totalStats['blocked'] as int;
-    final safePercent = totalScanned > 0
-        ? ((totalScanned - totalBlocked) / totalScanned * 100).round()
-        : 100;
-    final blockedPercent =
-        totalScanned > 0 ? (totalBlocked / totalScanned * 100).round() : 0;
-
     return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
       slivers: [
         // ── AppBar ───────────────────────────────────────────
         SliverAppBar(
@@ -193,90 +169,159 @@ class _MonitoringBody extends StatelessWidget {
           ],
         ),
 
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── بطاقة الدرع الرئيسية ────────────────────
-                _ShieldSummaryCard(
-                  totalScanned: totalScanned,
-                  totalBlocked: totalBlocked,
-                  safePercent: safePercent,
-                  blockedPercent: blockedPercent,
-                  deletedCount: deletedEntries.length,
-                ),
+        // ── الدرع والإحصائيات الكلية ────────────────────────
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          sliver: SliverToBoxAdapter(
+            child: ValueListenableBuilder(
+              valueListenable:
+                  Hive.box('scan_stats').listenable(keys: ['total_stats']),
+              builder: (context, Box statsBox, _) {
+                final totalStats = _getTotalStats();
+                final totalScanned = totalStats['scanned'] as int;
+                final totalBlocked = totalStats['blocked'] as int;
+                final safePercent = totalScanned > 0
+                    ? ((totalScanned - totalBlocked) / totalScanned * 100)
+                        .round()
+                    : 100;
+                final blockedPercent = 100 - safePercent;
 
-                const SizedBox(height: 20),
-
-                // ── إحصائيات سريعة ──────────────────────────
-                _QuickStatsRow(
-                  totalScanned: totalScanned,
-                  totalBlocked: totalBlocked,
-                  foldersCount: folderStats.length,
-                  deletedCount: deletedEntries.length,
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Chart دائري للنسب ────────────────────────
-                if (totalScanned > 0) ...[
-                  _SectionHeader(
-                      title: 'نسبة الأمان', icon: Icons.donut_large_rounded),
-                  const SizedBox(height: 12),
-                  _PieChartCard(
-                    safeCount: totalScanned - totalBlocked,
-                    blockedCount: totalBlocked,
-                    total: totalScanned,
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // ── إحصائيات الفولدرات ───────────────────────
-                if (folderStats.isNotEmpty) ...[
-                  _SectionHeader(
-                      title: 'الفولدرات المفحوصة',
-                      icon: Icons.folder_special_rounded),
-                  const SizedBox(height: 12),
-                  ...folderStats.map((f) => _FolderStatCard(
-                        name: f['name'] as String,
-                        total: f['total'] as int,
-                        blocked: f['blocked'] as int,
-                        safe: f['safe'] as int,
-                        images: f['images'] as int,
-                        videos: f['videos'] as int,
-                        lastScan: _timeAgo(f['lastScan'] as int),
-                        icon: _folderIcon(f['name'] as String),
-                        color: _folderColor(f['name'] as String),
-                      )),
-                  const SizedBox(height: 24),
-                ],
-
-                // ── سجل الحذف الأخير ────────────────────────
-                _SectionHeader(
-                    title: 'آخر الملفات المحذوفة',
-                    icon: Icons.delete_sweep_rounded),
-                const SizedBox(height: 12),
-
-                if (deletedEntries.isEmpty)
-                  _EmptyDeletedState()
-                else
-                  ...deletedEntries.take(10).map((e) {
-                    final entry = e as Map;
-                    return _DeleteLogCard(
-                      fileName: entry['fileName'] ?? 'ملف',
-                      source: entry['source'] ?? 'أخرى',
-                      timeMs: entry['deletedAt'] as int? ?? 0,
-                      timeAgo: _timeAgo(entry['deletedAt'] as int? ?? 0),
+                return ValueListenableBuilder(
+                  valueListenable: Hive.box('deleted_log').listenable(),
+                  builder: (context, Box deletedBox, _) {
+                    final deletedLen = deletedBox.length;
+                    return Column(
+                      children: [
+                        _ShieldSummaryCard(
+                          totalScanned: totalScanned,
+                          totalBlocked: totalBlocked,
+                          safePercent: safePercent,
+                          blockedPercent: blockedPercent,
+                          deletedCount: deletedLen,
+                        ),
+                        const SizedBox(height: 20),
+                        _QuickStatsRow(
+                          totalScanned: totalScanned,
+                          totalBlocked: totalBlocked,
+                          foldersCount: Hive.box('scan_stats')
+                              .keys
+                              .where((k) => k.toString().startsWith('folder_'))
+                              .length,
+                          deletedCount: deletedLen,
+                        ),
+                        if (totalScanned > 0) ...[
+                          const SizedBox(height: 24),
+                          const _SectionHeader(
+                              title: 'نسبة الأمان',
+                              icon: Icons.donut_large_rounded),
+                          const SizedBox(height: 12),
+                          _PieChartCard(
+                            safeCount: totalScanned - totalBlocked,
+                            blockedCount: totalBlocked,
+                            total: totalScanned,
+                          ),
+                        ],
+                      ],
                     );
-                  }),
-
-                const SizedBox(height: 30),
-              ],
+                  },
+                );
+              },
             ),
           ),
         ),
+
+        // ── إحصائيات الفولدرات ───────────────────────
+        ValueListenableBuilder(
+          valueListenable: Hive.box('scan_stats').listenable(),
+          builder: (context, Box statsBox, _) {
+            final folderStats = _getFolderStats();
+            if (folderStats.isEmpty) return const SliverToBoxAdapter();
+            return SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverMainAxisGroup(
+                slivers: [
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: _SectionHeader(
+                          title: 'الفولدرات المفحوصة',
+                          icon: Icons.folder_special_rounded),
+                    ),
+                  ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final f = folderStats[index];
+                        return _FolderStatCard(
+                          key: ValueKey('folder_${f['name']}'),
+                          name: f['name'] as String,
+                          total: f['total'] as int,
+                          blocked: f['blocked'] as int,
+                          safe: f['safe'] as int,
+                          images: f['images'] as int,
+                          videos: f['videos'] as int,
+                          lastScan: _timeAgo(f['lastScan'] as int),
+                          icon: _folderIcon(f['name'] as String),
+                          color: _folderColor(f['name'] as String),
+                        );
+                      },
+                      childCount: folderStats.length,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+
+        // ── سجل الحذف الأخير ────────────────────────
+        ValueListenableBuilder(
+          valueListenable: Hive.box('deleted_log').listenable(),
+          builder: (context, Box deletedBox, _) {
+            final int totalDeleted = deletedBox.length;
+            final int displayCount = math.min(totalDeleted, 10);
+
+            if (totalDeleted == 0) {
+              return SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverToBoxAdapter(child: _EmptyDeletedState()),
+              );
+            }
+
+            return SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverMainAxisGroup(
+                slivers: [
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: _SectionHeader(
+                          title: 'آخر الملفات المحذوفة',
+                          icon: Icons.delete_sweep_rounded),
+                    ),
+                  ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final entry =
+                            deletedBox.getAt(totalDeleted - 1 - index) as Map;
+                        return _DeleteLogCard(
+                          key: ValueKey('del_${entry['deletedAt']}'),
+                          fileName: entry['fileName'] ?? 'ملف',
+                          source: entry['source'] ?? 'أخرى',
+                          timeMs: entry['deletedAt'] as int? ?? 0,
+                          timeAgo: _timeAgo(entry['deletedAt'] as int? ?? 0),
+                        );
+                      },
+                      childCount: displayCount,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
     );
   }
@@ -680,31 +725,33 @@ class _PieChartCard extends StatelessWidget {
           SizedBox(
             width: 100,
             height: 100,
-            child: CustomPaint(
-              painter: _DonutChartPainter(
-                safeRatio: safeRatio,
-                blockedRatio: blockedRatio,
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${(safeRatio * 100).round()}%',
-                      style: const TextStyle(
-                        color: Color(0xFF00FF88),
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _DonutChartPainter(
+                  safeRatio: safeRatio,
+                  blockedRatio: blockedRatio,
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${(safeRatio * 100).round()}%',
+                        style: const TextStyle(
+                          color: Color(0xFF00FF88),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'آمن',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.4),
-                        fontSize: 10,
+                      Text(
+                        'آمن',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.4),
+                          fontSize: 10,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -875,6 +922,7 @@ class _FolderStatCard extends StatelessWidget {
   final Color color;
 
   const _FolderStatCard({
+    super.key,
     required this.name,
     required this.total,
     required this.blocked,
@@ -1064,6 +1112,7 @@ class _DeleteLogCard extends StatelessWidget {
   final String timeAgo;
 
   const _DeleteLogCard({
+    super.key,
     required this.fileName,
     required this.source,
     required this.timeMs,

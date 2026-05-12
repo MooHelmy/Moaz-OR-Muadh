@@ -1,8 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:medi_guard/core/utils/shared_preferences_service.dart';
 
-class CustomShieldCounter extends StatelessWidget {
-  final int days;
-  const CustomShieldCounter({super.key, required this.days});
+class CustomShieldCounter extends StatefulWidget {
+  const CustomShieldCounter({
+    super.key,
+  });
+
+  @override
+  State<CustomShieldCounter> createState() => _CustomShieldCounterState();
+}
+
+class _CustomShieldCounterState extends State<CustomShieldCounter> {
+  int days = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsageDuration();
+  }
+
+  Future<void> _loadUsageDuration() async {
+    final usageDuration = await SharePreferencesService.getUsageDuration();
+    final loadedDays = usageDuration["days"] ?? 0;
+    if (!mounted) return;
+    setState(() {
+      days = loadedDays;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +64,7 @@ class CustomShieldCounter extends StatelessWidget {
                 size: 38,
               ),
               Text(
-                "$days",
+                "${days == 0 ? 1 : days}", // ✅ FIX #27: عرض 1 يوم بدلاً من 0
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 60,

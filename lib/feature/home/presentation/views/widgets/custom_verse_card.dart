@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/home/presentation/views/widgets/custom_emergency_button.dart';
 
 class CustomVerseCard extends StatelessWidget {
   const CustomVerseCard({super.key});
@@ -34,7 +33,7 @@ class CustomVerseCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 25),
-          const EmergencyActionButton(), // زر منفصل لسهولة التعديل
+          // const EmergencyActionButton(), // زر منفصل لسهولة التعديل
         ],
       ),
     );
