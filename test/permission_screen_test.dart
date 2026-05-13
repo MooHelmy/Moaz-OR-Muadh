@@ -24,7 +24,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PermissionScreen(
-            onGranted: () => onGrantedCalled = true,
+            onGranted: (bool _) => onGrantedCalled = true,
           ),
         ),
       );
@@ -41,7 +41,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PermissionScreen(
-            onGranted: () => onGrantedCalled = true,
+            onGranted: (bool _) => onGrantedCalled = true,
           ),
         ),
       );

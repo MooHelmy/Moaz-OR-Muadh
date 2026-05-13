@@ -3,7 +3,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PermissionScreen extends StatefulWidget {
-  final VoidCallback onGranted;
+  final void Function(bool showAccessibilityOnboarding) onGranted;
   const PermissionScreen({super.key, required this.onGranted});
 
   @override
@@ -28,7 +28,12 @@ class _PermissionScreenState extends State<PermissionScreen> {
           await Permission.storage.isGranted;
 
       if (storageOk && mounted) {
-        widget.onGranted();
+        final showAccessibilityOnboarding =
+            !(prefs.getBool('accessibility_onboarding_shown') ?? false);
+        if (showAccessibilityOnboarding) {
+          await prefs.setBool('accessibility_onboarding_shown', true);
+        }
+        widget.onGranted(showAccessibilityOnboarding);
         return;
       }
     }
@@ -48,8 +53,16 @@ class _PermissionScreenState extends State<PermissionScreen> {
 
     if (storageGranted) {
       final prefs = await SharedPreferences.getInstance();
+      final alreadyShown =
+          prefs.getBool('accessibility_onboarding_shown') ?? false;
+      final showAccessibilityOnboarding = !alreadyShown;
+
       await prefs.setBool('permissions_granted', true);
-      widget.onGranted();
+      if (showAccessibilityOnboarding) {
+        await prefs.setBool('accessibility_onboarding_shown', true);
+      }
+
+      widget.onGranted(showAccessibilityOnboarding);
     } else {
       await openAppSettings();
     }

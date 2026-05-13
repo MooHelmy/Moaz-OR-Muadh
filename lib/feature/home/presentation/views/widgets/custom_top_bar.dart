@@ -18,10 +18,10 @@ class CustomTopBar extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(
-            Icons.menu_open_rounded,
-            color: textColor,
-            size: 28,
+          Image.asset(
+            'assets/logo/Capture.PNG',
+            height: 32,
+            fit: BoxFit.contain,
           ),
           Text(
             "مَعاذ",
@@ -62,16 +62,6 @@ class CustomTopBar extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                child: Icon(
-                  Icons.person_outline,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                ),
-              ),
             ],
           ),
         ],

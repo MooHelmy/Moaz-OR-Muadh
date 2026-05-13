@@ -79,11 +79,16 @@ class MuadhApp extends ConsumerWidget {
           darkTheme: AppTheme.darkTheme,
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: PermissionScreen(
-            onGranted: () async {
+            onGranted: (showAccessibilityOnboarding) async {
               await FileObserverChannel.startWatching(ScanTargets.folders);
               await ScanServiceManager.start();
               navigatorKey.currentState?.pushReplacement(
-                MaterialPageRoute(builder: (_) => const MainTabView()),
+                MaterialPageRoute(
+                  builder: (_) => MainTabView(
+                    initialIndex: showAccessibilityOnboarding ? 1 : 0,
+                    showAccessibilityPrompt: showAccessibilityOnboarding,
+                  ),
+                ),
               );
             },
           ),

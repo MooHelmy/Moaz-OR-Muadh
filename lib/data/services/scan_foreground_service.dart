@@ -1,3 +1,5 @@
+// ignore_for_file: unused_catch_stack
+
 import 'dart:io';
 
 import 'package:battery_plus/battery_plus.dart';
@@ -87,7 +89,7 @@ class ScanTaskHandler extends TaskHandler {
   bool _ready = false;
   int _lastBatteryCheck = 0;
   bool _isLowBattery = false;
-  int _repeatCount = 0;
+  int repeatCount = 0;
   // ✅ flag عشان الـ sweep الأولي يتعمل مرة واحدة بس
 
   // ─── onStart ────────────────────────────────
@@ -167,7 +169,7 @@ class ScanTaskHandler extends TaskHandler {
   // كل 30 ثانية → فقط للمراقبة والـ log، مش للـ sweep
   @override
   void onRepeatEvent(DateTime timestamp) {
-    _repeatCount++;
+    repeatCount++;
     // ✅ الـ sweep الأولي اتعمل في _initializeServices
     // مش محتاجين نعيده كل 30 ثانية — FileObserver هو اللي بيجيب الجديد
   }

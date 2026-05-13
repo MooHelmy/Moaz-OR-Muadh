@@ -9,6 +9,8 @@
 //  ✅ flutter_screenutil لكل الأبعاد
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -102,7 +104,7 @@ class _CustomDetailedTimerState extends State<CustomDetailedTimer>
         _timer?.cancel();
         _timer = null;
       case AppLifecycleState.resumed:
-        _tick();         // تحديث فوري بعد الرجوع
+        _tick(); // تحديث فوري بعد الرجوع
         _startTimer();
       case AppLifecycleState.inactive:
         break;
@@ -132,9 +134,10 @@ class _CustomDetailedTimerState extends State<CustomDetailedTimer>
     return Container(
       padding: EdgeInsets.symmetric(vertical: 24.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24.r),
-        border: Border.all(color: const Color(0xFFEDF2F1)),
+        border:
+            Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
       ),
       // ✅ ValueListenableBuilder — يُعيد بناء الـ Row فقط عند تغيُّر القيمة
       child: ValueListenableBuilder<_TimerSnapshot>(
@@ -142,9 +145,9 @@ class _CustomDetailedTimerState extends State<CustomDetailedTimer>
         builder: (_, snap, __) => Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            CustomTimeBlock(value: snap.days,    label: 'أيام'),
+            CustomTimeBlock(value: snap.days, label: 'أيام'),
             const _Divider(),
-            CustomTimeBlock(value: snap.hours,   label: 'ساعة'),
+            CustomTimeBlock(value: snap.hours, label: 'ساعة'),
             const _Divider(),
             CustomTimeBlock(value: snap.minutes, label: 'دقيقة'),
           ],
