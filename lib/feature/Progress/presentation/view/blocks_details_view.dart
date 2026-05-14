@@ -1,0 +1,53 @@
+import 'package:flutter/material.dart';
+import 'package:medi_guard/feature/Progress/presentation/view/widgets/blocks_details_view_body.dart';
+
+class BlocksDetailsView extends StatefulWidget {
+  const BlocksDetailsView({super.key});
+
+  @override
+  State<BlocksDetailsView> createState() => _BlocksDetailsViewState();
+}
+
+class _BlocksDetailsViewState extends State<BlocksDetailsView> {
+  // مفتاح للوصول إلى الدالات داخل الـ Body
+  final GlobalKey<BlocksDetailsViewBodyState> _bodyKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Color(0xFF064E3B),
+            size: 20,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          "تفاصيل المحتوى المحجوب",
+          style: TextStyle(
+            color: Color(0xFF064E3B),
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.delete_sweep_rounded,
+              color: Colors.redAccent,
+            ),
+            tooltip: "مسح السجل",
+            onPressed: () => _bodyKey.currentState?.clearLogs(),
+          ),
+        ],
+      ),
+      body: BlocksDetailsViewBody(key: _bodyKey),
+    );
+  }
+}

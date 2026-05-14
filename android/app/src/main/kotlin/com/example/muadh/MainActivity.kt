@@ -1,9 +1,11 @@
 package com.example.muadh
 
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.app.admin.DevicePolicyManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.VpnService
 import android.os.FileObserver
 import android.provider.Settings
@@ -33,8 +35,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         setupVpnChannel(flutterEngine)
         setupFileObserverChannel(flutterEngine)
-        setupDeleteChannel(flutterEngine)
-        setupAntiUninstallChannel(flutterEngine)   // ✅ جديد
+        setupDeleteChannel(flutterEngine)   // ✅ جديد
     }
 
     // ─── Delete Channel ────────────────────────────────────
@@ -161,52 +162,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun isMediaFile(path: String) = mediaExtensions.any { path.lowercase().endsWith(it) }
-
-    // ─── Device Admin Methods for Anti-Uninstall ──────────────────────────────
-    private fun setupAntiUninstallChannel(flutterEngine: FlutterEngine) {
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "com.maadh.shield/anti_uninstall"
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "enableAntiUninstall" -> {
-                    enableDeviceAdmin()
-                    result.success(true)
-                }
-                "disableAntiUninstall" -> {
-                    disableDeviceAdmin()
-                    result.success(true)
-                }
-                "isAntiUninstallEnabled" -> {
-                    val isEnabled = isDeviceAdminActive()
-                    result.success(isEnabled)
-                }
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    private fun enableDeviceAdmin() {
-        val componentName = ComponentName(this, com.medi_guard.DeviceAdminReceiver::class.java)
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
-            putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "تفعيل قفل الحماية لمنع حذف التطبيق بدون رمز سري")
-        }
-        startActivity(intent)
-    }
-
-    private fun disableDeviceAdmin() {
-        val componentName = ComponentName(this, com.medi_guard.DeviceAdminReceiver::class.java)
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-        dpm.removeActiveAdmin(componentName)
-    }
-
-    private fun isDeviceAdminActive(): Boolean {
-        val componentName = ComponentName(this, com.medi_guard.DeviceAdminReceiver::class.java)
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-        return dpm.isAdminActive(componentName)
-    }
 
     override fun onDestroy() {
         observers.forEach { it.stopWatching() }

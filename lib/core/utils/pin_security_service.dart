@@ -1,6 +1,6 @@
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,14 +11,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 //   • فرق كامل بين user PIN وmaster PIN
 // ─────────────────────────────────────────────────────────────────────────────
 class PinSecurityService {
-  static const _keyUserPinHash   = 'sec_user_pin_hash';
-  static const _keyUserPinSalt   = 'sec_user_pin_salt';
-  static const _keyMasterHash    = 'sec_master_hash';
-  static const _keyMasterSalt    = 'sec_master_salt';
-  static const _keyFailedCount   = 'sec_failed_count';
-  static const _keyLockUntil     = 'sec_lock_until';
-  static const _lockDurationMs   = 3 * 60 * 1000; // 3 دقائق
-  static const _maxAttempts      = 5;
+  static const _keyUserPinHash = 'sec_user_pin_hash';
+  static const _keyUserPinSalt = 'sec_user_pin_salt';
+  static const _keyMasterHash = 'sec_master_hash';
+  static const _keyMasterSalt = 'sec_master_salt';
+  static const _keyFailedCount = 'sec_failed_count';
+  static const _keyLockUntil = 'sec_lock_until';
+  static const _lockDurationMs = 3 * 60 * 1000; // 3 دقائق
+  static const _maxAttempts = 5;
 
   // ─── Hashing ──────────────────────────────────────────────────────────────
   static String _hash(String pin, String salt) {
@@ -27,7 +27,7 @@ class PinSecurityService {
   }
 
   static String _randomSalt() {
-    final ts  = DateTime.now().microsecondsSinceEpoch;
+    final ts = DateTime.now().microsecondsSinceEpoch;
     final rnd = Object().hashCode;
     return sha256.convert(utf8.encode('$ts-$rnd')).toString().substring(0, 16);
   }
@@ -82,8 +82,7 @@ class PinSecurityService {
     final count = (prefs.getInt(_keyFailedCount) ?? 0) + 1;
     await prefs.setInt(_keyFailedCount, count);
     if (count >= _maxAttempts) {
-      final lockUntil =
-          DateTime.now().millisecondsSinceEpoch + _lockDurationMs;
+      final lockUntil = DateTime.now().millisecondsSinceEpoch + _lockDurationMs;
       await prefs.setInt(_keyLockUntil, lockUntil);
       await prefs.setInt(_keyFailedCount, 0);
     }

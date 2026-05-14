@@ -12,7 +12,6 @@ import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/data/services/work_manager_service.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
-import 'package:path_provider/path_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -26,10 +25,7 @@ class AppBootstrapper {
     WidgetsFlutterBinding.ensureInitialized();
     FlutterForegroundTask.initCommunicationPort();
 
-    // استخدم path صريح عشان يتطابق مع الـ background isolate
-    final appDir = await getApplicationDocumentsDirectory();
-
-    await Hive.initFlutter(appDir.path);
+    await Hive.initFlutter();
     await Future.wait([
       Hive.openBox('scanned_hashes'),
       Hive.openBox('decisions'),

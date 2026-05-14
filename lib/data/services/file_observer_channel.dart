@@ -14,7 +14,7 @@
 //    ✅ Zero memory leaks — كل resource مُسجَّل ومُلغى
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ignore_for_file: unused_field, unused_catch_clause
+// ignore_for_file: unused_catch_clause
 
 import 'dart:async';
 import 'dart:collection';
@@ -33,9 +33,8 @@ final class _ObsCfg {
   /// TTL لـ dedup set — بعده نفرغه لمنع memory growth
   static const Duration dedupTtl = Duration(seconds: 30);
 
-  /// حد أقصى لعدد المدخلات في الـ LRU dedup cache
-  /// 200 مدخل ≈ 50KB ذاكرة — يغطي أي burst طبيعي
-  static const int dedupMaxSize = 200;
+  /// حد أقصى لعدد الأحداث الفريدة في dedup set
+  static const int dedupMaxSize = 500;
 
   /// حد أقصى للأحداث المُمررة للـ TaskHandler في الثانية
   static const int maxEventsPerSecond = 200;
@@ -45,41 +44,6 @@ final class _ObsCfg {
 
   /// فاصل بين كل retry (يتضاعف exponentially)
   static const Duration retryBaseDelay = Duration(seconds: 2);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// _LruCache — LRU Cache بسيط وخفيف
-//
-// بيحتفظ بأحدث [maxSize] مدخل فقط.
-// لما يتجاوز الحد → يمسح الأقدم تلقائياً (Least Recently Used).
-// أكفأ من LinkedHashMap العادي لأنه:
-//   ✅ مش محتاج flush timer — بيتنظف لوحده مع كل إضافة
-//   ✅ الذاكرة ثابتة دايماً ≤ maxSize × حجم المدخل
-//   ✅ O(1) للقراءة والكتابة
-// ──────────────────────────────────────────────────────────────────────────────
-final class _LruCache<K, V> {
-  _LruCache(this.maxSize) : assert(maxSize > 0);
-
-  final int maxSize;
-  final LinkedHashMap<K, V> _map = LinkedHashMap();
-
-  V? get(K key) {
-    final value = _map.remove(key);
-    if (value != null) _map[key] = value; // انقله لآخر الـ map (الأحدث)
-    return value;
-  }
-
-  void put(K key, V value) {
-    _map.remove(key); // لو موجود → شيله من مكانه القديم
-    _map[key] = value; // ضيفه في الآخر (الأحدث)
-    if (_map.length > maxSize) {
-      _map.remove(_map.keys.first); // امسح الأقدم (الأول)
-    }
-  }
-
-  bool containsKey(K key) => _map.containsKey(key);
-  void clear() => _map.clear();
-  int get length => _map.length;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -101,9 +65,9 @@ class FileObserverChannel {
   // ── Debounce timers: path → pending timer ─────────────────────────────────
   static final Map<String, Timer> _debounceTimers = {};
 
-  // ── Dedup: LRU cache — أحدث 200 ملف فقط، بدون flush timer ────────────────
-  static final _LruCache<String, DateTime> _recentlySeen =
-      _LruCache(_ObsCfg.dedupMaxSize);
+  // ── Dedup: paths رأيناها مؤخراً + وقت آخر رؤية ────────────────────────────
+  static final LinkedHashMap<String, DateTime> _recentlySeen = LinkedHashMap();
+  static Timer? _dedupFlushTimer;
 
   // ── Rate limiter ───────────────────────────────────────────────────────────
   static int _eventCountThisSecond = 0;
@@ -131,6 +95,7 @@ class FileObserverChannel {
 
     _isWatching = true;
     _retryCount = 0;
+    _startDedupFlushTimer();
     _startRateLimitTimer();
     _subscribe();
   }
@@ -153,6 +118,8 @@ class FileObserverChannel {
     _debounceTimers.clear();
 
     // ✅ إلغاء timers الأخرى
+    _dedupFlushTimer?.cancel();
+    _dedupFlushTimer = null;
     _rateLimitResetTimer?.cancel();
     _rateLimitResetTimer = null;
 
@@ -246,6 +213,23 @@ class FileObserverChannel {
   // TIMERS
   // ══════════════════════════════════════════════════════════════════════════
 
+  /// يفرغ dedup set دورياً لمنع memory growth
+  static void _startDedupFlushTimer() {
+    _dedupFlushTimer?.cancel();
+    _dedupFlushTimer = Timer.periodic(_ObsCfg.dedupTtl, (_) {
+      final now = DateTime.now();
+      final cutoff = now.subtract(_ObsCfg.dedupTtl);
+      _recentlySeen.removeWhere((_, seenAt) => seenAt.isBefore(cutoff));
+
+      // حماية إضافية: إذا تجاوز الحجم الأقصى → احتفظ بالأحدث فقط
+      if (_recentlySeen.length > _ObsCfg.dedupMaxSize) {
+        final toRemove = _recentlySeen.length - _ObsCfg.dedupMaxSize;
+        final keys = _recentlySeen.keys.take(toRemove).toList();
+        keys.forEach(_recentlySeen.remove);
+      }
+    });
+  }
+
   /// يُصفّر عداد الأحداث كل ثانية
   static void _startRateLimitTimer() {
     _rateLimitResetTimer?.cancel();
@@ -273,7 +257,7 @@ final class _DebounceDedup extends StreamTransformerBase<String, String> {
   });
 
   final Duration debounce;
-  final _LruCache<String, DateTime> recentlySeen;
+  final Map<String, DateTime> recentlySeen;
 
   @override
   Stream<String> bind(Stream<String> stream) {
@@ -286,7 +270,7 @@ final class _DebounceDedup extends StreamTransformerBase<String, String> {
         final sub = stream.listen(
           (path) {
             // ── Dedup: تجاهل إذا رأيناه مؤخراً ──────────────────────────
-            final lastSeen = recentlySeen.get(path);
+            final lastSeen = recentlySeen[path];
             if (lastSeen != null &&
                 DateTime.now().difference(lastSeen) < debounce * 2) {
               return;
@@ -297,7 +281,7 @@ final class _DebounceDedup extends StreamTransformerBase<String, String> {
             timers[path] = Timer(debounce, () {
               timers.remove(path);
               if (!controller.isClosed) {
-                recentlySeen.put(path, DateTime.now()); // LRU put
+                recentlySeen[path] = DateTime.now();
                 controller.add(path);
               }
             });

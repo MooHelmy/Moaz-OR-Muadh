@@ -3,7 +3,7 @@ import 'dart:developer';
 import 'package:flutter/services.dart';
 
 class MaadhShieldManager {
-  static const platform = MethodChannel('com.maadh.shield/anti_uninstall');
+  static const platform = MethodChannel('com.maadh.shield/vpn');
 
   static Future<void> toggleVpn(bool isActive) async {
     try {
@@ -31,29 +31,6 @@ class MaadhShieldManager {
       return await platform.invokeMethod('isAccessibilityEnabled') ?? false;
     } on PlatformException catch (e) {
       log("فشل التحقق من الحارس: ${e.message}");
-      return false;
-    }
-  }
-
-  // تفعيل/إيقاف قفل الحماية (Anti-Uninstall)
-  static Future<void> toggleAntiUninstall(bool isActive) async {
-    try {
-      if (isActive) {
-        await platform.invokeMethod('enableAntiUninstall');
-      } else {
-        await platform.invokeMethod('disableAntiUninstall');
-      }
-    } on PlatformException catch (e) {
-      log("خطأ في قفل الحماية: ${e.message}");
-    }
-  }
-
-  // التحقق من حالة قفل الحماية
-  static Future<bool> isAntiUninstallEnabled() async {
-    try {
-      return await platform.invokeMethod('isAntiUninstallEnabled') ?? false;
-    } on PlatformException catch (e) {
-      log("فشل التحقق من قفل الحماية: ${e.message}");
       return false;
     }
   }

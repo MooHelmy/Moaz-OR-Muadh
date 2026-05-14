@@ -7,9 +7,6 @@ environment:
 
 dependencies:
   battery_plus: ^6.2.2
-  
-  
-
   flutter:
     sdk: flutter
   flutter_foreground_task: ^9.2.2
@@ -37,9 +34,14 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mockito: ^5.4.4
-
+  flutter_launcher_icons: ^0.14.4
+fluttericon:
+  android: true
+  ios: true 
+  image_path: "assets/icon/icon.png"
 flutter:
   uses-material-design: true
   assets:
     - assets/models/
-    - assets/logo/
+    - assets/icon/
+    

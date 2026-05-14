@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -14,37 +13,18 @@ import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
+const String reset = '\x1B[0m';
+const String red = '\x1B[31m';
+// ignore: unused_element
+const String yellow = '\x1B[33m';
+const String blue = '\x1B[34m';
+const String bold = '\x1B[1m';
+
 const bool kDebugScan = kDebugMode;
 
 // ✅ FIX #13: Adaptive concurrency بدلاً من ثابت = 3
 // على الأجهزة الضعيفة نخفف، على القوية نزيد
 const int _concurrentFiles = 2; // آمن على كل الأجهزة
-
-// ──────────────────────────────────────────────────────────────────────────────
-// _ScanLruCache — LRU Cache لنتايج الفحص
-//
-// بيحتفظ بنتيجة آخر 150 صورة/فيديو تم فحصهم.
-// لو نفس الملف وصل تاني → نتيجته جاهزة فوراً بدون AI.
-// 150 مدخل ≈ 30KB ذاكرة فقط.
-// ──────────────────────────────────────────────────────────────────────────────
-final class _ScanLruCache {
-  static const int _maxSize = 150;
-  final LinkedHashMap<String, bool> _map = LinkedHashMap();
-
-  bool? get(String hash) {
-    final v = _map.remove(hash);
-    if (v != null) _map[hash] = v;
-    return v;
-  }
-
-  void put(String hash, bool isNsfw) {
-    _map.remove(hash);
-    _map[hash] = isNsfw;
-    if (_map.length > _maxSize) _map.remove(_map.keys.first);
-  }
-
-  void clear() => _map.clear();
-}
 
 const MethodChannel _mediaScannerChannel =
     MethodChannel('medi_guard/media_scanner');
@@ -58,9 +38,6 @@ class ScanQueue {
   final Set<String> _pendingSet = {};
   final List<String> _queue = [];
   int _activeWorkers = 0;
-
-  // ✅ LRU Cache لنتايج الفحص — بيتجنب إعادة فحص نفس الملف بالـ AI
-  final _ScanLruCache _scanCache = _ScanLruCache();
 
   // ✅ FIX #14: Cancellation Token — dispose ينتظر الـ workers
   bool _cancelled = false;
@@ -138,7 +115,6 @@ class ScanQueue {
     _cancelled = true;
     _queue.clear();
     _pendingSet.clear();
-    _scanCache.clear(); // ✅ تحرير ذاكرة الـ LRU Cache
 
     if (_activeCompleters.isNotEmpty) {
       await Future.wait(_activeCompleters.map((c) => c.future))
@@ -271,18 +247,7 @@ class ScanQueue {
     final hash = await _getPartialHash(file);
     final hashesBox = Hive.box('scanned_hashes');
 
-    if (hashesBox.get(hash) != null) return;
-
-    // ✅ LRU Cache check — لو فحصناه من قريب، خد النتيجة من الذاكرة
-    final cached = _scanCache.get(hash);
-    if (cached != null) {
-      if (cached && !_cancelled) {
-        final deleted = await deleteManager.deleteImmediately(path);
-        if (deleted) {
-          await Future.wait([_logDeletion(path), _notifyMediaScanner(path)]);
-          await notifier.showDeletedNotification(path);
-        }
-      }
+    if (hashesBox.get(hash) != null) {
       return;
     }
 
@@ -292,15 +257,11 @@ class ScanQueue {
 
     if (kDebugScan) {}
 
-    final isNsfw = decision.result == DecisionResult.reject;
-
-    // ✅ احفظ النتيجة في الـ LRU Cache
-    _scanCache.put(hash, isNsfw);
-
     // ✅ تسجيل في الإحصائيات
-    await _recordScanStat(path, isNsfw: isNsfw, isVideo: false);
+    await _recordScanStat(path,
+        isNsfw: decision.result == DecisionResult.reject, isVideo: false);
 
-    if (isNsfw && !_cancelled) {
+    if (decision.result == DecisionResult.reject && !_cancelled) {
       final deleted = await deleteManager.deleteImmediately(path);
       if (deleted) {
         await Future.wait([

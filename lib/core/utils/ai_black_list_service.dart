@@ -73,8 +73,8 @@ class AiBlacklistService {
       "xxx",
       "سكس",
       "xnxx",
-      "sex",
-      "xvideos",
+      "sex"
+          "xvideos",
       "pornhub",
       "betting",
       "casino",
