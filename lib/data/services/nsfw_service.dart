@@ -12,7 +12,6 @@
 //    ✅ Architecture ready for: quantized ONNX, GPU delegates, batching
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ignore_for_file: avoid_print
 
 import 'dart:async';
 import 'dart:io';
@@ -106,9 +105,10 @@ abstract final class _Log {
   static void e(String msg, [Object? e]) => _out('❌', msg, e);
 
   static void _out(String icon, String msg, [Object? err]) {
+    if (!kDebugMode) return;
     final line =
         err != null ? '$icon $_tag $msg\n    ↳ $err' : '$icon $_tag $msg';
-    print(line);
+    debugPrint(line);
   }
 }
 

@@ -14,13 +14,6 @@ import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
-const String reset = '\x1B[0m';
-const String red = '\x1B[31m';
-// ignore: unused_element
-const String yellow = '\x1B[33m';
-const String blue = '\x1B[34m';
-const String bold = '\x1B[1m';
-
 const bool kDebugScan = kDebugMode;
 
 // ✅ FIX #13: Adaptive concurrency بدلاً من ثابت = 3

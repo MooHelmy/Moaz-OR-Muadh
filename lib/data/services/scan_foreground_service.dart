@@ -15,6 +15,7 @@ import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:medi_guard/domain/scanning/scan_queue.dart';
+import 'package:path_provider/path_provider.dart';
 
 // ─────────────────────────────────────────────
 // ScanServiceManager  →  يبدأ/يوقف الـ foreground service
@@ -101,7 +102,9 @@ class ScanTaskHandler extends TaskHandler {
   // ─── init ────────────────────────────────
   Future<void> _initializeServices() async {
     try {
-      await Hive.initFlutter();
+      // استخدم نفس الـ path زي الـ main isolate عشان Hive يفتح نفس قاعدة البيانات
+      final appDir = await getApplicationDocumentsDirectory();
+      Hive.init(appDir.path);
       // await Firebase.initializeApp();
       await Future.wait([
         Hive.openBox('scanned_hashes'),
@@ -178,33 +181,39 @@ class ScanTaskHandler extends TaskHandler {
   Future<void> _sweepAllFolders() async {
     if (_queue == null) return;
 
-    // ✅ اجمع كل الملفات من كل الفولدرات
-    final allFiles = <File>[];
+    // معالجة على دفعات بدل تحميل كل الملفات في الذاكرة دفعة واحدة
+    const batchSize = 100;
+    final batch = <File>[];
+
+    Future<void> flushBatch() async {
+      if (batch.isEmpty) return;
+      // رتّب كل دفعة من الأحدث للأقدم ثم أضفها للـ queue
+      batch.sort(
+          (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      for (final file in batch) {
+        _queue!.add(file.path);
+      }
+      batch.clear();
+      // أعطِ الـ event loop فرصة يعالج الأحداث الجديدة بين الدفعات
+      await Future.delayed(Duration.zero);
+    }
 
     for (final folder in ScanTargets.folders) {
       final dir = Directory(folder);
       if (!await dir.exists()) continue;
 
-      // ✅ recursive: true عشان نمسك الفيديوهات في Sent/ وباقي السب-فولدرات
       await for (final entity in dir.list(recursive: true)) {
         if (entity is File && ScanTargets.isMediaFile(entity.path)) {
-          allFiles.add(entity);
+          batch.add(entity);
+          if (batch.length >= batchSize) {
+            await flushBatch();
+          }
         }
       }
     }
 
-    if (allFiles.isEmpty) return;
-
-    // ✅ رتّب من الأحدث للأقدم (last modified)
-    allFiles.sort((a, b) {
-      final aStat = a.statSync();
-      final bStat = b.statSync();
-      return bStat.modified.compareTo(aStat.modified);
-    });
-
-    for (final file in allFiles) {
-      _queue!.add(file.path);
-    }
+    // flush أي ملفات متبقية
+    await flushBatch();
   }
 
   // ─── onDestroy ────────────────────────────

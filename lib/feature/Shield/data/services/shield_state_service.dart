@@ -47,6 +47,9 @@ class ShieldStateService {
   static const _fileName = 'shield_state.json';
   static const _directoryName = '.maadh_shield';
 
+  // ─── in-memory cache ────────────────────────────────────────────────────────
+  static ShieldState? _cache;
+
   static Future<Directory?> _stateDirectory() async {
     try {
       final baseDir = await getExternalStorageDirectory();
@@ -68,20 +71,25 @@ class ShieldStateService {
   }
 
   static Future<ShieldState> loadState() async {
+    if (_cache != null) return _cache!;
     try {
       final file = await _stateFile();
       if (file == null || !await file.exists()) {
-        return const ShieldState();
+        _cache = const ShieldState();
+        return _cache!;
       }
       final raw = await file.readAsString();
       final jsonMap = jsonDecode(raw) as Map<String, dynamic>;
-      return ShieldState.fromJson(jsonMap);
+      _cache = ShieldState.fromJson(jsonMap);
+      return _cache!;
     } catch (_) {
-      return const ShieldState();
+      _cache = const ShieldState();
+      return _cache!;
     }
   }
 
   static Future<void> saveState(ShieldState state) async {
+    _cache = state;
     try {
       final file = await _stateFile();
       if (file == null) return;
@@ -90,6 +98,9 @@ class ShieldStateService {
       // ignore storage failures, we still want app to continue.
     }
   }
+
+  // invalidate cache (e.g. after background isolate writes)
+  static void invalidateCache() => _cache = null;
 
   static Future<void> updateVpnActive(bool value) async {
     final state = await loadState();
@@ -111,6 +122,7 @@ class ShieldStateService {
       antiUninstallActive: state.antiUninstallActive,
       antiUninstallPin: state.antiUninstallPin,
       accessibilityPin: state.accessibilityPin,
+      adminPin: state.adminPin,
     ));
   }
 
@@ -122,6 +134,7 @@ class ShieldStateService {
       antiUninstallActive: value,
       antiUninstallPin: state.antiUninstallPin,
       accessibilityPin: state.accessibilityPin,
+      adminPin: state.adminPin,
     ));
   }
 
@@ -187,17 +200,20 @@ class ShieldStateService {
     ));
   }
 
-  static Future<bool> validatePin(String pin, String type) async {
+  // ملاحظة: الـ master PIN بيتخزن كـ SHA-256 hash من DeveloperScreen.
+  // المقارنة لازم تتم بعد hash الـ input — مش plaintext.
+  // التحقق الفعلي بيحصل في shield_view_body._verifyPin()
+  static Future<bool> validatePin(String hashedInput, String type) async {
     final state = await loadState();
-    final adminPin = state.adminPin;
-    if (adminPin != null && adminPin.isNotEmpty && adminPin == pin) {
+    final adminHash = state.adminPin;
+    if (adminHash != null && adminHash.isNotEmpty && adminHash == hashedInput) {
       return true;
     }
     if (type == 'antiUninstall') {
-      return state.antiUninstallPin == pin;
+      return state.antiUninstallPin == hashedInput;
     }
     if (type == 'accessibility') {
-      return state.accessibilityPin == pin;
+      return state.accessibilityPin == hashedInput;
     }
     return false;
   }
