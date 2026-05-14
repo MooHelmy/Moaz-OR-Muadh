@@ -1,12 +1,14 @@
-// ignore_for_file: deprecated_member_use
+import 'dart:convert';
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/Shield/data/services/shield_state_service.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_service_card.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/shield_channel.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ShieldViewBody extends StatefulWidget {
   const ShieldViewBody({super.key});
@@ -20,13 +22,14 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
   bool isVpnActive = false;
   bool isAccessibilityActive = false;
   bool isAntiUninstallActive = false;
-  bool isAdminPinActive = false;
+  String _userPin = '';
 
   @override
   void initState() {
     super.initState();
     // إضافة مراقب لحالة التطبيق
     WidgetsBinding.instance.addObserver(this);
+    _initializeUserPin();
     _checkInitialStatus();
   }
 
@@ -45,216 +48,90 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     }
   }
 
-  Future<void> _checkInitialStatus() async {
-    final savedState = await ShieldStateService.loadState();
+  void _checkInitialStatus() async {
     final accessibilityStatus =
         await MaadhShieldManager.isAccessibilityEnabled();
-
-    if (savedState.vpnActive) {
-      await MaadhShieldManager.toggleVpn(true);
-    }
-
+    final antiUninstallStatus =
+        await MaadhShieldManager.isAntiUninstallEnabled();
     if (mounted) {
       setState(() {
-        isVpnActive = savedState.vpnActive;
-        isAccessibilityActive =
-            accessibilityStatus || savedState.accessibilityActive;
-        isAntiUninstallActive = savedState.antiUninstallActive;
-        isAdminPinActive =
-            savedState.adminPin != null && savedState.adminPin!.isNotEmpty;
-      });
-    }
-
-    if (savedState.accessibilityActive && !accessibilityStatus && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showRestoreAccessibilityDialog();
+        isAccessibilityActive = accessibilityStatus;
+        isAntiUninstallActive = antiUninstallStatus;
       });
     }
   }
 
-  void _showRestoreAccessibilityDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
-        title: Row(
-          children: [
-            Icon(Icons.security, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 12),
-            const Text("إعادة تفعيل الحارس الذكي"),
-          ],
-        ),
-        content: const Text(
-          "الحارس الذكي محفوظ مفعلاً سابقاً. من فضلك أعد تفعيله من إعدادات الوصول.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("لاحقاً",
-                style:
-                    TextStyle(color: Theme.of(context).colorScheme.secondary)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              MaadhShieldManager.requestAccessibility();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-            ),
-            child: const Text("اذهب للإعدادات"),
-          ),
-        ],
-      ),
-    );
+  // دالة لتوليد رقم سري فريد لكل مستخدم
+  Future<void> _initializeUserPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? savedPin = prefs.getString('user_unique_pin');
+
+    if (savedPin == null) {
+      // توليد رقم سري فريد بناءً على معرف الجهاز
+      savedPin = await _generateUniquePin();
+      await prefs.setString('user_unique_pin', savedPin);
+    }
+
+    setState(() {
+      _userPin = savedPin!;
+    });
   }
 
-  Future<bool> _showSetPinDialog(String type) async {
-    String pin = "";
-    String confirmPin = "";
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            title: Row(
-              children: [
-                Icon(Icons.lock, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 12),
-                Text(type == 'antiUninstall'
-                    ? "اضبط رمز حماية عدم الحذف"
-                    : type == 'accessibility'
-                        ? "اضبط رمز حماية الحارس الذكي"
-                        : "اضبط رمز المدير"),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(type == 'antiUninstall'
-                    ? "اختر رمزًا سريًا مختلفًا عن بقية المستخدمين لوقف حماية عدم حذف التطبيق."
-                    : type == 'accessibility'
-                        ? "اختر رمزًا سريًا مختلفًا عن بقية المستخدمين لوقف الحارس الذكي."
-                        : "اختر رمزًا سريًا مختلفًا عن بقية المستخدمين لرمز المدير."),
-                const SizedBox(height: 20),
-                TextField(
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  obscureText: true,
-                  onChanged: (v) => pin = v,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      letterSpacing: 8,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold),
-                  decoration: InputDecoration(
-                    hintText: "الرمز",
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withOpacity(0.3),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  keyboardType: TextInputType.number,
-                  obscureText: true,
-                  onChanged: (v) => confirmPin = v,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      letterSpacing: 8,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold),
-                  decoration: InputDecoration(
-                    hintText: "أعد كتابة الرمز",
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withOpacity(0.3),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text("إلغاء",
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.secondary)),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  if (pin.isEmpty || pin != confirmPin) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text("الرمز غير متطابق، حاول مرة أخرى."),
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        margin: const EdgeInsets.all(16),
-                      ),
-                    );
-                    return;
-                  }
+  // توليد رقم سري فريد بناءً على معرف الجهاز
+  Future<String> _generateUniquePin() async {
+    // الحصول على معرف فريد للجهاز (يمكن استخدام device_info_plus لاحقاً)
+    final random = Random();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final randomSeed = random.nextInt(999999);
 
-                  if (type == 'antiUninstall') {
-                    await ShieldStateService.saveAntiUninstallPin(pin);
-                  } else if (type == 'accessibility') {
-                    await ShieldStateService.saveAccessibilityPin(pin);
-                  } else if (type == 'admin') {
-                    await ShieldStateService.saveAdminPin(pin);
-                  }
+    // دمج البيانات لإنشاء hash فريد
+    final uniqueData = '$timestamp-$randomSeed-${random.nextInt(10000)}';
+    final bytes = utf8.encode(uniqueData);
+    final hash = sha256.convert(bytes);
 
-                  Navigator.pop(context, true);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text(
-                  "حفظ الرمز",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // استخراج 4 أرقام من الـ hash
+    final hashString = hash.toString();
+    final numbers = hashString.replaceAll(RegExp(r'[^0-9]'), '');
+
+    // التأكد من وجود 4 أرقام على الأقل
+    if (numbers.length < 4) {
+      // إذا لم يكن كافياً، أضف أرقام عشوائية
+      final additionalNumbers =
+          List.generate(4 - numbers.length, (_) => random.nextInt(10));
+      return numbers + additionalNumbers.join('');
+    }
+
+    // أخذ أول 4 أرقام من الـ hash
+    return numbers.substring(0, 4);
   }
 
+  // دالة لإعادة تعيين الرقم السري
+  Future<void> _resetUserPin() async {
+    final newPin = await _generateUniquePin();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_unique_pin', newPin);
+
+    setState(() {
+      _userPin = newPin;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إعادة تعيين الرقم السري الجديد: $newPin'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  // دالة لإظهار نافذة طلب الرمز السري
   Future<bool> _showPinDialog() async {
-    return await _verifyPin('admin');
-  }
-
-  Future<bool> _verifyPin(String type) async {
-    final state = await ShieldStateService.loadState();
-    final correctPin = type == 'antiUninstall'
-        ? state.antiUninstallPin
-        : type == 'accessibility'
-            ? state.accessibilityPin
-            : state.adminPin;
-
-    if ((correctPin == null || correctPin.isEmpty) &&
-        !await ShieldStateService.hasPin('admin')) {
-      return false;
-    }
-
     String input = "";
     return await showDialog<bool>(
           context: context,
@@ -273,6 +150,8 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Text("رقمك السري: $_userPin"),
+                const SizedBox(height: 8),
                 const Text("أدخل الرمز السري لإدارة إعدادات الحماية"),
                 const SizedBox(height: 20),
                 TextField(
@@ -308,9 +187,18 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
                     style: TextStyle(
                         color: Theme.of(context).colorScheme.secondary)),
               ),
-              ElevatedButton(
+              TextButton(
                 onPressed: () async {
-                  if (await ShieldStateService.validatePin(input, type)) {
+                  await _resetUserPin();
+                  Navigator.pop(context, false);
+                },
+                child: const Text("إعادة تعيين الرقم",
+                    style: TextStyle(color: Colors.orange)),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  // استخدام الرقم السري الفريد للمستخدم
+                  if (input == _userPin) {
                     Navigator.pop(context, true);
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -358,14 +246,12 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
             if (value) {
               // تفعيل مباشر
               setState(() => isVpnActive = true);
-              await ShieldStateService.updateVpnActive(true);
               MaadhShieldManager.toggleVpn(true);
             } else {
               // محاولة إيقاف -> طلب رمز سري
               bool authorized = await _showPinDialog();
               if (authorized) {
                 setState(() => isVpnActive = false);
-                await ShieldStateService.updateVpnActive(false);
                 MaadhShieldManager.toggleVpn(false);
               }
             }
@@ -373,18 +259,12 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
         ),
         CustomServiceCard(
           title: "الحارس الذكي (Accessibility)",
-          desc: "تعزيز الأمان للمحتوى المباشر",
+          desc: "المراقبة  المباشرة",
           icon: Icons.remove_red_eye_rounded,
           isActive: isAccessibilityActive,
           onChanged: (value) async {
             if (value) {
-              final hasPin = await ShieldStateService.hasPin('accessibility');
-              if (!hasPin) {
-                final created = await _showSetPinDialog('accessibility');
-                if (!created) return;
-              }
-              await ShieldStateService.updateAccessibilityActive(true);
-              setState(() => isAccessibilityActive = true);
+              // تفعيل -> الذهاب للإعدادات
               return await showDialog(
                 context: context,
                 builder: (context) => MaadhAccessDialog(
@@ -395,10 +275,9 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
               );
             } else {
               // إيقاف -> طلب رمز سري أولاً
-              bool authorized = await _verifyPin('accessibility');
+              bool authorized = await _showPinDialog();
               if (authorized) {
-                await ShieldStateService.updateAccessibilityActive(false);
-                setState(() => isAccessibilityActive = false);
+                // إذا الرمز صحيح، نرسله للإعدادات ليقوم بالإيقاف يدوياً
                 MaadhShieldManager.requestAccessibility();
               }
             }
@@ -407,74 +286,42 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
         const SizedBox(height: 20),
         const CustomSectionTitel(title: "الأمان المتقدم"),
         CustomServiceCard(
-          title: "رمز المدير",
-          desc: "رمز إداري واحد للتحكم بكل الحماية",
-          icon: Icons.admin_panel_settings_rounded,
-          isActive: isAdminPinActive,
-          onChanged: (value) async {
-            if (value) {
-              final created = await _showSetPinDialog('admin');
-              if (!created) return;
-              setState(() => isAdminPinActive = true);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
-                    "تم ضبط رمز المدير. يمكنك استخدامه للتحكم في أي حماية.",
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                  margin: const EdgeInsets.all(16),
-                ),
-              );
-            } else {
-              final authorized = await _verifyPin('admin');
-              if (authorized) {
-                await ShieldStateService.removeAdminPin();
-                setState(() => isAdminPinActive = false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text("تم حذف رمز المدير."),
-                    behavior: SnackBarBehavior.floating,
-                    margin: const EdgeInsets.all(16),
-                  ),
-                );
-              }
-            }
-          },
-        ),
-        const SizedBox(height: 15),
-        CustomServiceCard(
           title: "قفل الحماية (Anti-Uninstall)",
-          desc: "حماية إضافية ضد الإزالة غير المصرح بها",
+          desc: "منع حذف التطبيق تماماً",
           icon: Icons.admin_panel_settings_rounded,
           isActive: isAntiUninstallActive,
           isWarning: true,
           onChanged: (value) async {
             if (value) {
-              final hasPin = await ShieldStateService.hasPin('antiUninstall');
-              if (!hasPin) {
-                final created = await _showSetPinDialog('antiUninstall');
-                if (!created) return;
-              }
-              setState(() => isAntiUninstallActive = true);
-              await ShieldStateService.updateAntiUninstallActive(true);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
-                      "تم تفعيل حماية عدم حذف التطبيق. لإيقافها تحتاج كلمة سر."),
-                  behavior: SnackBarBehavior.floating,
-                  margin: const EdgeInsets.all(16),
-                ),
-              );
-            } else {
-              bool authorized = await _verifyPin('antiUninstall');
+              // تفعيل -> طلب رمز سري
+              bool authorized = await _showPinDialog();
               if (authorized) {
-                setState(() => isAntiUninstallActive = false);
-                await ShieldStateService.updateAntiUninstallActive(false);
+                setState(() => isAntiUninstallActive = true);
+                MaadhShieldManager.toggleAntiUninstall(true);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content:
-                        const Text("تم تعطيل الحماية بعد إدخال الرمز السري."),
+                    content: const Text('✓ تم تفعيل قفل الحماية'),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    margin: const EdgeInsets.all(16),
+                  ),
+                );
+              }
+            } else {
+              // إيقاف -> طلب رمز سري
+              bool authorized = await _showPinDialog();
+              if (authorized) {
+                setState(() => isAntiUninstallActive = false);
+                MaadhShieldManager.toggleAntiUninstall(false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('✓ تم إيقاف قفل الحماية'),
+                    backgroundColor: Colors.orange,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     margin: const EdgeInsets.all(16),
                   ),
                 );
@@ -483,6 +330,60 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
           },
         ),
         const SizedBox(height: 30),
+        // زر لعرض الرقم السري
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.pin_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'رقمك السري الحالي',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _userPin.isEmpty ? 'جاري التحميل...' : _userPin,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'احتفظ بهذا الرقم آمناً',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         const CustomSecurityHint(),
       ],
     );

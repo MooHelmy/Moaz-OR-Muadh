@@ -18,10 +18,47 @@ class CustomTopBar extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Image.asset(
-            'assets/logo/Capture.PNG',
-            height: 32,
-            fit: BoxFit.contain,
+          Tooltip(
+            message: 'βTech\nTap for see website',
+            showDuration: const Duration(seconds: 3),
+            textStyle: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Theme.of(context).colorScheme.surface,
+                border: Border.all(
+                  color: const Color(0xFF10B981),
+                  width: 2.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF10B981).withOpacity(0.3),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                'β',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: !isDarkMode
+                      ? const Color(0xFF551a8b)
+                      : const Color(
+                          0xFF10B981), // Green in light mode, text color in dark
+                ),
+              ),
+            ),
           ),
           Text(
             "مَعاذ",
