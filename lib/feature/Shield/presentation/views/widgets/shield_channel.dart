@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:flutter/services.dart';
+import 'package:medi_guard/core/constants/keys.dart';
 
 class MaadhShieldManager {
   static const platform = MethodChannel('com.maadh.shield/vpn');
@@ -61,10 +62,11 @@ class MaadhShieldManager {
   /// توليد PIN عشوائي من 6 أرقام — يُحفظ كـ hash في Native ويُرجع للـ Flutter مرة واحدة فقط
   static Future<String> generateAndSavePin() async {
     try {
-      return await _adminChannel.invokeMethod('generateAndSavePin') ?? '000000';
+      return await _adminChannel.invokeMethod('generateAndSavePin') ??
+          KAntiUninstall;
     } on PlatformException catch (e) {
       log("خطأ في توليد PIN: ${e.message}");
-      return '000000';
+      return KAntiUninstall;
     }
   }
 

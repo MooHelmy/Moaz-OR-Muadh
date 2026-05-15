@@ -11,6 +11,7 @@ import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/data/services/work_manager_service.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/splash_view.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -84,10 +85,15 @@ class MuadhApp extends ConsumerWidget {
               await ScanServiceManager.start();
               navigatorKey.currentState?.pushReplacement(
                 MaterialPageRoute(
-                  builder: (_) => MainTabView(
-                    initialIndex: showAccessibilityOnboarding ? 1 : 0,
-                    showAccessibilityPrompt: showAccessibilityOnboarding,
-                  ),
+                  builder: (_) => showAccessibilityOnboarding
+                      ? MainTabView(
+                          initialIndex: showAccessibilityOnboarding ? 1 : 0,
+                          showAccessibilityPrompt: showAccessibilityOnboarding,
+                        )
+                      : SplashView(
+                          showAccessibilityOnboarding:
+                              showAccessibilityOnboarding,
+                        ),
                 ),
               );
             },

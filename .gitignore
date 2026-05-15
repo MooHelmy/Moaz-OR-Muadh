@@ -44,4 +44,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /assets/models
-/assets/logo
+/lib/core/constants/keys.dart

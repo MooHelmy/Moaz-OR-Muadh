@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:medi_guard/core/constants/keys.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
@@ -54,164 +55,68 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     }
   }
 
+  // Helper for showing consistent SnackBars
+  void _showSnackBar(String message,
+      {Color? backgroundColor, bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor ??
+            (isError ? Theme.of(context).colorScheme.error : Colors.green),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
   // ─── دالة رمز السري العام (للـ VPN وغيره) ───────────────────────────────────
   Future<bool> _showPinDialog() async {
-    String input = "";
     return await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            title: Row(
-              children: [
-                Icon(Icons.lock_person_rounded,
-                    color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 12),
-                const Text("تأكيد الهوية"),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text("أدخل الرمز السري لإدارة إعدادات الحماية"),
-                const SizedBox(height: 20),
-                TextField(
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  obscureText: true,
-                  onChanged: (v) => input = v,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      letterSpacing: 8,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold),
-                  decoration: InputDecoration(
-                    hintText: "••••",
-                    hintStyle: TextStyle(color: Theme.of(context).hintColor),
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withOpacity(0.3),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text("إلغاء",
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.secondary)),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (input == "0000") {
-                    Navigator.pop(context, true);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content:
-                            const Text("رمز خاطئ! لا يمكن تعديل الإعدادات."),
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        margin: const EdgeInsets.all(16),
-                      ),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text(
-                  "تأكيد",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
+          builder: (context) => PinInputAlertDialog(
+            title: "تأكيد الهوية",
+            description: "أدخل الرمز السري لإدارة إعدادات الحماية",
+            icon: Icons.lock_person_rounded,
+            maxLength: 4, // Assuming KAccessibility is a 4-digit PIN
+            hintText: "••••",
+            onConfirm: (pin) {
+              if (pin == KAccessibility) {
+                Navigator.pop(context, true);
+              } else {
+                _showSnackBar("رمز خاطئ! لا يمكن تعديل الإعدادات.",
+                    isError: true);
+              }
+            },
+            onCancel: () => Navigator.pop(context, false),
           ),
         ) ??
         false;
   }
 
   // ─── تفعيل Anti-Uninstall ────────────────────────────────────────────────────
+  // Delay duration for checking admin status after request
+  static const _adminRequestDelay = Duration(seconds: 2);
+
   Future<void> _enableAntiUninstall() async {
     // 1. توليد PIN وعرضه للمستخدم مرة واحدة فقط
     final pin = await MaadhShieldManager.generateAndSavePin();
     if (!mounted) return;
 
+    // Mask the PIN: show the first two digits and mask the rest with hash symbols.
+    final maskedPin = pin.substring(0, 2) + '#&\$';
+
     bool userConfirmed = false;
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(children: [
-          Icon(Icons.shield_rounded, color: Theme.of(ctx).colorScheme.primary),
-          const SizedBox(width: 12),
-          const Text("رمز إلغاء الحماية"),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "احفظ هذا الرمز جيداً.\nستحتاجه لإيقاف الحماية لاحقاً.\nلن يظهر مجدداً!",
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
-              decoration: BoxDecoration(
-                color: Theme.of(ctx).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                pin.codeUnitAt(1).toString(), // عرض الرمز كأرقام فقط
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 8,
-                  color: Theme.of(ctx).colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              "⚠️ هذا الرمز لا يمكن استرجاعه",
-              style: TextStyle(color: Colors.orange, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text("إلغاء",
-                style: TextStyle(color: Theme.of(ctx).colorScheme.secondary)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              userConfirmed = true;
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.primary,
-              foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text("حفظت الرمز ✓"),
-          ),
-        ],
+      builder: (ctx) => _GeneratedPinDisplayDialog(
+        maskedPin: maskedPin,
+        onConfirm: () {
+          userConfirmed = true;
+          Navigator.pop(ctx);
+        },
+        onCancel: () => Navigator.pop(ctx),
       ),
     );
 
@@ -221,127 +126,41 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     await MaadhShieldManager.requestAdmin();
 
     // 3. انتظر ثم تحقق لو تم التفعيل
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(_adminRequestDelay);
     if (!mounted) return;
 
     final isActive = await MaadhShieldManager.isAdminActive();
     if (isActive) {
       await MaadhShieldManager.setAntiUninstallActive(true);
       if (mounted) setState(() => isAntiUninstallActive = true);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("✅ تم تفعيل حماية التطبيق بنجاح"),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-        ),
-      );
+      _showSnackBar("✅ تم تفعيل حماية التطبيق بنجاح");
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("⚠️ لم يتم منح الصلاحية، الحماية غير مفعلة"),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-      }
+      _showSnackBar("⚠️ لم يتم منح الصلاحية، الحماية غير مفعلة", isError: true);
     }
   }
 
   // ─── إلغاء Anti-Uninstall ────────────────────────────────────────────────────
   Future<void> _disableAntiUninstall() async {
-    String inputPin = "";
-
     final authorized = await showDialog<bool>(
           context: context,
-          builder: (ctx) => StatefulBuilder(
-            builder: (ctx, setStateDialog) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
-              title: Row(children: [
-                Icon(Icons.lock_open_rounded,
-                    color: Theme.of(ctx).colorScheme.primary),
-                const SizedBox(width: 12),
-                const Text("إلغاء الحماية"),
-              ]),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    "أدخل رمز الـ 6 أرقام الذي تم عرضه عند التفعيل",
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    maxLength: 6,
-                    onChanged: (v) => inputPin = v,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        letterSpacing: 8,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold),
-                    decoration: InputDecoration(
-                      counterText: "",
-                      hintText: "• • • • • •",
-                      filled: true,
-                      fillColor: Theme.of(ctx)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withOpacity(0.3),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text("إلغاء",
-                      style: TextStyle(
-                          color: Theme.of(ctx).colorScheme.secondary)),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final ok = await MaadhShieldManager.verifyPinAndRemoveAdmin(
-                        inputPin);
-                    if (ok) {
-                      Navigator.pop(ctx, true);
-                    } else {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(
-                          content: const Text("❌ رمز خاطئ! حاول مجدداً."),
-                          backgroundColor: Theme.of(ctx).colorScheme.error,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          margin: const EdgeInsets.all(16),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(ctx).colorScheme.primary,
-                    foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text("تأكيد"),
-                ),
-              ],
-            ),
+          builder: (ctx) => PinInputAlertDialog(
+            title: "إلغاء الحماية",
+            description: "أدخل رمز الـ 6 أرقام الذي تم عرضه عند التفعيل",
+            icon: Icons.lock_open_rounded,
+            maxLength: 6,
+            hintText: "• • • • • •",
+            onConfirm: (inputPin) async {
+              final ok =
+                  await MaadhShieldManager.verifyPinAndRemoveAdmin(inputPin);
+              if (ok) {
+                if (mounted) Navigator.pop(ctx, true);
+              } else {
+                if (mounted) {
+                  _showSnackBar("❌ رمز خاطئ! حاول مجدداً.", isError: true);
+                }
+              }
+            },
+            onCancel: () => Navigator.pop(ctx, false),
           ),
         ) ??
         false;
@@ -350,16 +169,8 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
       await MaadhShieldManager.setAntiUninstallActive(false);
       if (mounted) {
         setState(() => isAntiUninstallActive = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("✅ تم إلغاء حماية التطبيق"),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
+        _showSnackBar("✅ تم إلغاء حماية التطبيق",
+            backgroundColor: Colors.orange);
       }
     }
   }
@@ -440,6 +251,168 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
 
         const SizedBox(height: 30),
         const CustomSecurityHint(),
+      ],
+    );
+  }
+}
+
+// Extracted Widget for a generic PIN input dialog
+class PinInputAlertDialog extends StatefulWidget {
+  final String title;
+  final String description;
+  final int maxLength;
+  final Function(String pin) onConfirm;
+  final VoidCallback onCancel;
+  final String hintText;
+  final IconData icon;
+
+  const PinInputAlertDialog({
+    Key? key,
+    required this.title,
+    required this.description,
+    this.maxLength = 6,
+    required this.onConfirm,
+    required this.onCancel,
+    this.hintText = "• • • • • •",
+    required this.icon,
+  }) : super(key: key);
+
+  @override
+  State<PinInputAlertDialog> createState() => PinInputAlertDialogState();
+}
+
+class PinInputAlertDialogState extends State<PinInputAlertDialog> {
+  String _inputPin = "";
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(
+        children: [
+          Icon(widget.icon, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Text(widget.title),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.description,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            obscureText: true,
+            maxLength: widget.maxLength,
+            onChanged: (v) => setState(() => _inputPin = v),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                letterSpacing: 8, fontSize: 24, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              counterText: "",
+              hintText: widget.hintText,
+              filled: true,
+              fillColor:
+                  theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: widget.onCancel,
+          child: Text("إلغاء",
+              style: TextStyle(color: theme.colorScheme.secondary)),
+        ),
+        ElevatedButton(
+          onPressed: () => widget.onConfirm(_inputPin),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: const Text("تأكيد"),
+        ),
+      ],
+    );
+  }
+}
+
+// Extracted Widget for displaying the generated PIN once
+class _GeneratedPinDisplayDialog extends StatelessWidget {
+  final String maskedPin;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _GeneratedPinDisplayDialog({
+    Key? key,
+    required this.maskedPin,
+    required this.onConfirm,
+    required this.onCancel,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            "احفظ هذا الرمز جيداً.\nستحتاجه لإيقاف الحماية لاحقاً.\nلن يظهر مجدداً!",
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              maskedPin,
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 8,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "⚠️ هذا الرمز لا يمكن استرجاعه",
+            style: TextStyle(color: Colors.orange, fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: onCancel,
+          child: Text("إلغاء",
+              style: TextStyle(color: theme.colorScheme.secondary)),
+        ),
+        ElevatedButton(
+          onPressed: onConfirm,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: const Text("حفظت الرمز ✓"),
+        ),
       ],
     );
   }
