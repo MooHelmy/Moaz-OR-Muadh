@@ -11,12 +11,14 @@
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- ✅ مطلوب لـ flutter_foreground_task على Android 14+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
         tools:ignore="ProtectedPermissions" />
+    <!-- ✅ مطلوب لـ Device Admin -->
+    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN"
+        tools:ignore="ProtectedPermissions"/>
 
     <application
         android:name="${applicationName}"
@@ -60,7 +62,20 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- ✅ Boot Receiver — يشتغل تلقائياً لما التليفون يشتغل -->
+        <!-- ✅ Device Admin Receiver — يمنع حذف التطبيق -->
+        <receiver
+            android:name=".MaadhDeviceAdmin"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Boot Receiver -->
         <receiver
             android:name="com.pravera.flutter_foreground_task.receiver.BootReceiver"
             android:exported="true">

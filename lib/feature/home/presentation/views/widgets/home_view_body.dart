@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:medi_guard/feature/Progress/presentation/view/widgets/custom_details_timer_future_builder.dart';
 import 'package:medi_guard/feature/Progress/presentation/view/widgets/custom_rank_card.dart';
@@ -184,3 +186,4 @@ class HomeViewBody extends StatelessWidget {
     );
   }
 }
+//568374
