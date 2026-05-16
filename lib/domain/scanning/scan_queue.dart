@@ -22,9 +22,7 @@ const String bold = '\x1B[1m';
 
 const bool kDebugScan = kDebugMode;
 
-// ✅ FIX #13: Adaptive concurrency بدلاً من ثابت = 3
-// على الأجهزة الضعيفة نخفف، على القوية نزيد
-const int _concurrentFiles = 2; // آمن على كل الأجهزة
+const int _concurrentFiles = 2;
 
 const MethodChannel _mediaScannerChannel =
     MethodChannel('medi_guard/media_scanner');
@@ -39,7 +37,6 @@ class ScanQueue {
   final List<String> _queue = [];
   int _activeWorkers = 0;
 
-  // ✅ FIX #14: Cancellation Token — dispose ينتظر الـ workers
   bool _cancelled = false;
   bool _isPaused = false;
   final List<Completer<void>> _activeCompleters = [];
@@ -54,7 +51,6 @@ class ScanQueue {
   int get pendingCount => _queue.length;
   bool get isProcessing => _activeWorkers > 0 || _queue.isNotEmpty;
 
-  // ✅ FIX: Added missing methods for battery and performance management
   void pauseForBattery() {
     _isPaused = true;
   }
@@ -78,16 +74,15 @@ class ScanQueue {
     if (!_pendingSet.contains(path)) {
       _pendingSet.add(path);
       if (priority) {
-        _queue.insert(0, path); // ✅ وضعه في أول القائمة ليفحص فوراً
+        _queue.insert(0, path);
       } else {
-        _queue.add(path); // المسح العادي يضاف للآخر
+        _queue.add(path);
       }
       _trySpawnWorker();
     }
   }
 
   void _trySpawnWorker() {
-    // ✅ Check for pause state before spawning new workers
     if (_cancelled || _isPaused) return;
     if (_activeWorkers >= _concurrentFiles || _queue.isEmpty) return;
 
@@ -98,7 +93,9 @@ class ScanQueue {
     final completer = Completer<void>();
     _activeCompleters.add(completer);
 
-    _processFile(path).then((_) {
+    Future.delayed(const Duration(milliseconds: 50)).then((_) {
+      return _processFile(path);
+    }).then((_) {
       completer.complete();
     }).catchError((e) {
       completer.complete();
@@ -107,8 +104,6 @@ class ScanQueue {
       _activeWorkers--;
       _trySpawnWorker();
     });
-
-    _trySpawnWorker();
   }
 
   Future<void> dispose() async {
@@ -141,8 +136,6 @@ class ScanQueue {
   Future<void> _processVideo(String videoPath) async {
     if (_cancelled) return;
 
-    if (kDebugScan) {}
-
     final file = File(videoPath);
     if (!await file.exists()) return;
 
@@ -158,9 +151,8 @@ class ScanQueue {
     bool isNsfw = false;
 
     try {
-      // ✅ FIX #15: استخدام metadata-only بدلاً من VideoPlayerController
-      // video_thumbnail بيعطيك الـ frames بدون تشغيل full decoder
-      final timestamps = _generateFixedTimestamps();
+      final durationMs = await _getVideoDurationMs(videoPath);
+      final timestamps = _generateAdaptiveTimestamps(durationMs);
 
       for (int i = 0; i < timestamps.length; i++) {
         if (_cancelled) break;
@@ -176,16 +168,19 @@ class ScanQueue {
 
         if (nsfw > sfw) {
           isNsfw = true;
-          break; // ✅ Early exit — فريم واحد NSFW يكفي
+          break;
         }
       }
 
+      // ✅ FIX #6: سجّل stats حتى لو framePaths فاضلة
+      // قبل الإصلاح: الفيديو كان بيتسجل في hash بس مش في stats
+      // النتيجة: إحصائيات الـ MonitoringView ناقصة — فيديوهات اختفت
       if (framePaths.isEmpty) {
+        await _recordScanStat(videoPath, isNsfw: false, isVideo: true);
         await hashesBox.put(hash, 1);
         return;
       }
 
-      // ✅ تسجيل في الإحصائيات
       await _recordScanStat(videoPath, isNsfw: isNsfw, isVideo: true);
 
       if (isNsfw && !_cancelled) {
@@ -201,7 +196,6 @@ class ScanQueue {
 
       await hashesBox.put(hash, 1);
     } finally {
-      // ✅ FIX #16: async delete بدلاً من deleteSync
       for (final fp in framePaths) {
         try {
           await File(fp).delete();
@@ -210,10 +204,107 @@ class ScanQueue {
     }
   }
 
-  // ✅ FIX #15: Fixed timestamps بدون VideoPlayerController
-  // video_thumbnail بيرجع null تلقائياً لو الـ timestamp أكبر من المدة
-  List<int> _generateFixedTimestamps() {
-    return [0, 5000, 10000, 20000, 30000, 60000, 120000, 180000];
+  // ✅ FIX #4: استخدام continue بدل break عند فشل frame واحدة
+  //
+  // المشكلة القديمة:
+  //   لو frame تالفة عند 30s في فيديو ساعة → break فوراً
+  //   → lastSuccessMs = 0 → fallback 60s
+  //   → الفيديو يتعامل معه كـ دقيقة بدل ساعة
+  //   → frames موزعة غلط — ممكن يفوته محتوى NSFW في الساعة الأولى
+  //
+  // الحل:
+  //   continue بدل break — يكمل التجربة للـ timestamps الأكبر
+  //   null = frame تالفة وليس بالضرورة نهاية الفيديو
+  Future<int> _getVideoDurationMs(String videoPath) async {
+    const probes = [
+      30000,
+      120000,
+      600000,
+      1800000,
+      3600000,
+      7200000,
+    ];
+
+    int lastSuccessMs = 0;
+
+    for (final ms in probes) {
+      try {
+        final data = await VideoThumbnail.thumbnailData(
+          video: videoPath,
+          imageFormat: ImageFormat.JPEG,
+          timeMs: ms,
+          quality: 1,
+          maxWidth: 8,
+          maxHeight: 8,
+        ).timeout(const Duration(seconds: 3));
+
+        if (data != null && data.isNotEmpty) {
+          lastSuccessMs = ms;
+        } else {
+          // null هنا يعني تجاوزنا المدة — نوقف البحث
+          // لكن لو في probe سابق نجح ثم فشل → ده هو الحد
+          break;
+        }
+      } catch (_) {
+        // ✅ FIX: exception = frame تالفة أو timeout — نكمل للـ probe التالي
+        // بدلاً من افتراض إن الفيديو انتهى هنا
+        continue;
+      }
+    }
+
+    return lastSuccessMs > 0 ? lastSuccessMs : 60000;
+  }
+
+  // ✅ FIX: أول frame بعد 5s دايماً، آخر frame قبل النهاية بـ 5s دايماً
+  //
+  // المشكلة القديمة:
+  //   أول frame عند 0ms → غالباً black screen أو intro logo
+  //   آخر frame عند آخر ثانية → ممكن fade to black أو credits
+  //   كلهم مش محتوى حقيقي → ممكن يفوت NSFW
+  //
+  // الحل:
+  //   offsetMs = 5000ms → نتخطى الـ intro والـ outro
+  //   الـ frames الوسطى تتوزع تلقائياً بين first و last
+  List<int> _generateAdaptiveTimestamps(int durationMs) {
+    if (durationMs <= 0) return [0];
+
+    const int offsetMs = 5000; // 5 ثواني offset ثابت
+
+    final int frameCount;
+    if (durationMs < 10000) {
+      frameCount = 2;
+    } else if (durationMs < 30000) {
+      frameCount = 3;
+    } else if (durationMs < 300000) {
+      frameCount = 4;
+    } else if (durationMs < 1800000) {
+      frameCount = 5;
+    } else {
+      frameCount = 6;
+    }
+
+    // لو الفيديو أقصر من offset * 2 → frame واحدة في المنتصف
+    if (durationMs <= offsetMs * 2) {
+      return [(durationMs / 2).round()];
+    }
+
+    final int first = offsetMs; // دايماً 5s
+    final int last = durationMs - offsetMs; // دايماً قبل النهاية بـ 5s
+
+    if (frameCount == 1) return [first];
+    if (frameCount == 2) return [first, last];
+
+    // الـ frames الوسطى موزعة بالتساوي بين first و last
+    final int innerCount = frameCount - 2;
+    final List<int> timestamps = [first];
+
+    for (int i = 1; i <= innerCount; i++) {
+      final double step = (last - first) / (innerCount + 1);
+      timestamps.add((first + step * i).round());
+    }
+
+    timestamps.add(last);
+    return timestamps;
   }
 
   Future<String?> _extractFrame(
@@ -227,6 +318,8 @@ class ScanQueue {
         thumbnailPath: tempDir,
         imageFormat: ImageFormat.JPEG,
         timeMs: timeMs,
+        maxWidth: 224,
+        maxHeight: 224,
         quality: 75,
       );
     } catch (e) {
@@ -243,6 +336,7 @@ class ScanQueue {
 
     final stat = await file.stat();
     if (stat.size < 10240) return;
+    if (stat.size > 50 * 1024 * 1024) return;
 
     final hash = await _getPartialHash(file);
     final hashesBox = Hive.box('scanned_hashes');
@@ -255,9 +349,6 @@ class ScanQueue {
     final decision =
         engine.decide(scoredResult, scoredResult.rawNsfw, filePath: path);
 
-    if (kDebugScan) {}
-
-    // ✅ تسجيل في الإحصائيات
     await _recordScanStat(path,
         isNsfw: decision.result == DecisionResult.reject, isVideo: false);
 
@@ -275,13 +366,11 @@ class ScanQueue {
     await hashesBox.put(hash, 1);
   }
 
-  // ✅ FIX NEW: تسجيل إحصائيات لكل فولدر
   Future<void> _recordScanStat(String filePath,
       {required bool isNsfw, required bool isVideo}) async {
     try {
       final statsBox = Hive.box('scan_stats');
 
-      // تحديد الفولدر/المصدر
       final folder = _detectFolder(filePath);
       final key = 'folder_$folder';
 
@@ -304,12 +393,12 @@ class ScanQueue {
 
       await statsBox.put(key, stats);
 
-      // إحصاء كلي
       final totalKey = 'total_stats';
       final totalExisting = statsBox.get(totalKey) as Map? ?? {};
       final Map<String, dynamic> totalStats =
           Map<String, dynamic>.from(totalExisting);
       totalStats['scanned'] = (totalStats['scanned'] as int? ?? 0) + 1;
+      // ignore: curly_braces_in_flow_control_structures
       if (isNsfw)
         totalStats['blocked'] = (totalStats['blocked'] as int? ?? 0) + 1;
       await statsBox.put(totalKey, totalStats);
@@ -318,7 +407,6 @@ class ScanQueue {
     }
   }
 
-  // ✅ تسجيل تفاصيل الملف المحذوف ليظهر في الـ MonitoringView
   Future<void> _logDeletion(String path) async {
     try {
       final box = Hive.box('deleted_log');
@@ -333,7 +421,6 @@ class ScanQueue {
     }
   }
 
-  // ✅ وظيفة لتحديث معرض الصور (Media Store) بعد الحذف لإزالة "الأشباح"
   Future<void> _notifyMediaScanner(String path) async {
     try {
       await _mediaScannerChannel.invokeMethod('scanFile', {'path': path});

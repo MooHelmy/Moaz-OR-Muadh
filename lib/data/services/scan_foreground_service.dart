@@ -17,7 +17,7 @@ import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:medi_guard/domain/scanning/scan_queue.dart';
 
 // ─────────────────────────────────────────────
-// ScanServiceManager  →  يبدأ/يوقف الـ foreground service
+// ScanServiceManager
 // ─────────────────────────────────────────────
 class ScanServiceManager {
   static Future<void> initialize() async {
@@ -28,21 +28,18 @@ class ScanServiceManager {
         channelDescription:
             'This notification appears when the foreground service is running.',
         onlyAlertOnce: true,
-        channelImportance:
-            NotificationChannelImportance.LOW, // ✅ التسمية الصحيحة لإصدار 9.2.2
+        channelImportance: NotificationChannelImportance.LOW,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        // كل 5 ثواني → sweep fallback
-        eventAction:
-            ForegroundTaskEventAction.repeat(30000), // كل 30 ثانية للـ log فقط
+        eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
-        allowWakeLock: true,
-        allowWifiLock: true,
+        allowWakeLock: false,
+        allowWifiLock: false,
       ),
     );
   }
@@ -59,7 +56,6 @@ class ScanServiceManager {
       );
     }
 
-    // FileObserver → لازم يشتغل من الـ main isolate (مش من TaskHandler)
     try {
       await FileObserverChannel.startWatching(ScanTargets.folders);
     } catch (e) {
@@ -81,7 +77,7 @@ void startScanCallback() {
 }
 
 // ─────────────────────────────────────────────
-// ScanTaskHandler  →  يدير عملية الـ scan
+// ScanTaskHandler
 // ─────────────────────────────────────────────
 class ScanTaskHandler extends TaskHandler {
   ScanQueue? _queue;
@@ -90,11 +86,11 @@ class ScanTaskHandler extends TaskHandler {
   int _lastBatteryCheck = 0;
   bool _isLowBattery = false;
   int repeatCount = 0;
-  // ✅ flag عشان الـ sweep الأولي يتعمل مرة واحدة بس
 
   // ─── onStart ────────────────────────────────
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
+    await Future.delayed(const Duration(seconds: 8));
     _initializeServices();
   }
 
@@ -102,7 +98,6 @@ class ScanTaskHandler extends TaskHandler {
   Future<void> _initializeServices() async {
     try {
       await Hive.initFlutter();
-      // await Firebase.initializeApp();
       await Future.wait([
         Hive.openBox('scanned_hashes'),
         Hive.openBox('decisions'),
@@ -110,8 +105,24 @@ class ScanTaskHandler extends TaskHandler {
         Hive.openBox('deleted_log'),
       ]);
 
+      // ✅ FIX #1 & #2: NsfwService() بدون Singleton
+      //
+      // الكود القديم كان بيعمل:
+      //   final nsfwService = NsfwService(); // singleton
+      //
+      // المشكلة:
+      //   - الـ Dart isolates لا تشارك الـ heap
+      //   - الـ Singleton static field بيتعمل من جديد في كل isolate
+      //   - يعني مفيش فايدة من الـ Singleton هنا أصلاً
+      //   - لكنه كان بيسبب مشكلة: لو الـ isolate اتوقف وأُعيد تشغيله
+      //     → ScanQueue.dispose() استدعى nsfwService.dispose()
+      //     → _state = disposed على الـ static instance
+      //     → الـ isolate الجديد يلاقي service مقفولة → exception عند initialize()
+      //
+      // الحل:
+      //   NsfwService() عادي — كل isolate يعمل instance نظيفة خاصة به
       final nsfwService = NsfwService();
-      await nsfwService.initialize(); // يحمّل الـ ONNX model
+      await nsfwService.initialize();
 
       final notifier = ScanNotificationService();
       await notifier.initialize();
@@ -128,64 +139,63 @@ class ScanTaskHandler extends TaskHandler {
       );
 
       _ready = true;
-
-      // ✅ إصلاح: تشغيل المسح الشامل في الخلفية بدون await
-      // لكي تظل الخدمة مستعدة لاستقبال الملفات الجديدة فوراً
       _sweepAllFolders();
     } catch (e, stack) {
       // _initializeServices error
     }
   }
 
-  // ─── onReceiveData  ────────────────────────
-  // الملفات الجديدة جاية من FileObserver عبر FlutterForegroundTask.sendDataToTask
+  // ─── onReceiveData ────────────────────────
   @override
   void onReceiveData(Object data) {
     if (data is! String) return;
-
     if (!_ready || _queue == null) return;
 
-    // ✅ تحسين: فحص البطارية مرة كل 5 دقائق بدلاً من فحصها مع كل ملف
-    // لأن استدعاء batteryLevel مكلف ويؤخر الاستجابة
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastBatteryCheck > 300000) {
+    if (now - _lastBatteryCheck > 60000) {
       _battery.batteryLevel.then((level) {
-        _isLowBattery = level < 15;
+        _isLowBattery = level < 20;
         _lastBatteryCheck = now;
+      });
+      _battery.batteryState.then((state) {
+        final isCharging =
+            state == BatteryState.charging || state == BatteryState.full;
+        if (isCharging) {
+          _queue?.resumeHeavyTasks();
+        } else if (_isLowBattery) {
+          _queue?.pauseHeavyTasks();
+        }
       });
     }
 
-    if (_isLowBattery) {
-      return;
-    }
+    if (_isLowBattery) return;
 
-    // استخدام isMediaFile لفحص الامتداد وتجاهل الملفات المؤقتة (.pending)
     if (ScanTargets.isMediaFile(data)) {
-      _queue?.add(data, priority: true); // ✅ وضعه في مقدمة الطابور فوراً
+      _queue?.add(data, priority: true);
     }
   }
 
-  // ─── onRepeatEvent  ────────────────────────
-  // كل 30 ثانية → فقط للمراقبة والـ log، مش للـ sweep
+  // ─── onRepeatEvent ────────────────────────
   @override
   void onRepeatEvent(DateTime timestamp) {
     repeatCount++;
-    // ✅ الـ sweep الأولي اتعمل في _initializeServices
-    // مش محتاجين نعيده كل 30 ثانية — FileObserver هو اللي بيجيب الجديد
   }
 
   // ─── sweep ────────────────────────────────
   Future<void> _sweepAllFolders() async {
     if (_queue == null) return;
 
-    // ✅ اجمع كل الملفات من كل الفولدرات
+    await Future.delayed(const Duration(seconds: 5));
+
+    final level = await _battery.batteryLevel;
+    if (level < 20) return;
+
     final allFiles = <File>[];
 
     for (final folder in ScanTargets.folders) {
       final dir = Directory(folder);
       if (!await dir.exists()) continue;
 
-      // ✅ recursive: true عشان نمسك الفيديوهات في Sent/ وباقي السب-فولدرات
       await for (final entity in dir.list(recursive: true)) {
         if (entity is File && ScanTargets.isMediaFile(entity.path)) {
           allFiles.add(entity);
@@ -195,15 +205,48 @@ class ScanTaskHandler extends TaskHandler {
 
     if (allFiles.isEmpty) return;
 
-    // ✅ رتّب من الأحدث للأقدم (last modified)
-    allFiles.sort((a, b) {
-      final aStat = a.statSync();
-      final bStat = b.statSync();
-      return bStat.modified.compareTo(aStat.modified);
-    });
+    // ✅ FIX #3: إزالة statSync() من داخل sort
+    //
+    // الكود القديم:
+    //   allFiles.sort((a, b) {
+    //     final aStat = a.statSync(); // ← blocking I/O × عدد الملفات!
+    //     final bStat = b.statSync();
+    //     return bStat.modified.compareTo(aStat.modified);
+    //   });
+    //
+    // المشكلة:
+    //   - statSync() بيبلوك الـ isolate thread كاملاً لكل ملف
+    //   - مع 1000 ملف = 1000 blocking syscalls داخل الـ sort
+    //   - الـ sort نفسه O(n log n) يعني كل ملف بيتعمل stat أكتر من مرة
+    //   - النتيجة: الـ isolate بيتجمد ويوقف استقبال الملفات الجديدة
+    //
+    // الحل:
+    //   - اعمل stat لكل ملف مرة واحدة بـ Future.wait (async وmتوازي)
+    //   - ثم sort على النتائج بدون أي I/O
+    final withStats = await Future.wait(
+      allFiles.map((f) async {
+        try {
+          final stat = await f.stat();
+          return (file: f, modified: stat.modified);
+        } catch (_) {
+          // لو stat فشل → تعامل مع الملف كأقدم ملف (يتفحص أخيراً)
+          return (file: f, modified: DateTime.fromMillisecondsSinceEpoch(0));
+        }
+      }),
+    );
 
-    for (final file in allFiles) {
-      _queue!.add(file.path);
+    withStats.sort((a, b) => b.modified.compareTo(a.modified));
+
+    const batchSize = 50;
+    for (int i = 0; i < withStats.length; i += batchSize) {
+      final end = (i + batchSize).clamp(0, withStats.length);
+      final batch = withStats.sublist(i, end);
+      for (final item in batch) {
+        _queue!.add(item.file.path);
+      }
+      if (end < withStats.length) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
     }
   }
 

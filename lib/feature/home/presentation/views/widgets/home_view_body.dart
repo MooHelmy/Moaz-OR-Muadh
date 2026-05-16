@@ -1,12 +1,12 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/Progress/presentation/view/widgets/custom_details_timer_future_builder.dart';
-import 'package:medi_guard/feature/Progress/presentation/view/widgets/custom_rank_card.dart';
 import 'package:medi_guard/feature/home/presentation/views/widgets/custom_home_header.dart';
 import 'package:medi_guard/feature/home/presentation/views/widgets/custom_shield_counter.dart';
 import 'package:medi_guard/feature/home/presentation/views/widgets/custom_top_bar.dart';
 import 'package:medi_guard/feature/home/presentation/views/widgets/custom_verse_card.dart';
+import 'package:medi_guard/feature/monitoring/presentation/view/widgets/custom_details_timer_future_builder.dart';
+import 'package:medi_guard/feature/monitoring/presentation/view/widgets/custom_rank_card.dart';
 
 class HomeViewBody extends StatelessWidget {
   const HomeViewBody({super.key});
@@ -60,7 +60,8 @@ class HomeViewBody extends StatelessWidget {
                                 child: _buildMiniStatusCard(
                                   context,
                                   title: 'تركيز اليوم',
-                                  value: '80%',
+                                  // ✅ FIX: كانت '80%' hardcoded وهمية — استبدلناها بـ 'نشط'
+                                  value: 'نشط',
                                   icon: Icons.insights_rounded,
                                 ),
                               ),

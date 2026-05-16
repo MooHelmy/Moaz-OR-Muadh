@@ -11,6 +11,10 @@ class DecisionEngine {
   });
 
   // ✅ قائمة مواقع إباحية معروفة في اسم الملف → حذف فوري بدون فحص
+  // ✅ FIX: أزلنا 'sexy', 'nude', 'naked', 'nsfw' من القائمة
+  // أسماء عادية جداً تحتويها: sexy_back_song.jpg, nude_lipstick_ad.jpg
+  // الكلمات دي تُكشف بالـ AI model — مش بمطابقة اسم الملف
+  // باقي الكلمات دي domain names حقيقية → حذف فوري آمن
   static const _blockedKeywords = [
     'xnxx',
     'xvideos',
@@ -22,10 +26,6 @@ class DecisionEngine {
     'bangbros',
     'porn',
     'xxx',
-    'sexy',
-    'nude',
-    'naked',
-    'nsfw',
   ];
 
   MediaDecision decide(ScoredResult scored, NsfwResult rawNsfw,

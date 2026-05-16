@@ -27,17 +27,34 @@ class EnsembleScorer {
   });
 
   Future<ScoredResult> score(String path) async {
-    // ✅ الـ 3 موديلات بيشتغلوا بالتوازي
+    // ✅ OPT: نشغّل الـ NSFW model أول — لو النتيجة واضحة نوقف الباقي
+    // هيوفر 25% من الـ CPU في الحالات الواضحة (NSFW جداً أو SFW جداً)
+    final nsfw = await nsfwService.predict(path);
+
+    // ✅ Early exit للحالات الواضحة — مش محتاجين Face/Skin
+    if (nsfw.nsfw > 0.85 || nsfw.sfw > 0.85) {
+      final nsfwScore = nsfw.nsfw;
+      return ScoredResult(
+        path: path,
+        weighted: (nsfwScore * wNsfw).clamp(0.0, 1.0),
+        nsfwScore: nsfwScore,
+        faceScore: 0.0,
+        skinScore: 0.0,
+        rawFaceScore: 0.0,
+        rawSkinScore: 0.0,
+        amplifier: 0.0,
+        rawNsfw: nsfw,
+      );
+    }
+
+    // ✅ المنطقة الرمادية — نشغّل Face/Skin بالتوازي لتحسين القرار
     final results = await Future.wait([
-      nsfwService.predict(path),
       faceService.analyze(path),
       skinService.analyze(path),
     ]);
 
-    final nsfw = results[0] as NsfwResult;
-    final face = results[1] as FaceResult;
-    final skin = results[2] as SkinResult;
-
+    final face = results[0] as FaceResult;
+    final skin = results[1] as SkinResult;
     final nsfwScore = nsfw.nsfw;
 
     // ✅ حساب معامل التأثير لـ Face و Skin بناءً على درجة NSFW

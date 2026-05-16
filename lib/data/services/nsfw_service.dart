@@ -1,15 +1,10 @@
 // ══════════════════════════════════════════════════════════════════════════════
 //  nsfw_service.dart — Production-Ready ONNX Inference Service
-//  Version: 3.0.0 — Full rewrite
+//  Version: 3.1.0
 //
-//  Design guarantees:
-//    ✅ Singleton — одного instance на весь lifetime app
-//    ✅ Thread-safe initialization (Completer-based mutex)
-//    ✅ Zero force-unwrap (!) на всех execution paths
-//    ✅ Resilient: auto session recovery upon crash
-//    ✅ Inflight tracking — dispose waits for all active inferences
-//    ✅ Structured logging for every failure case
-//    ✅ Architecture ready for: quantized ONNX, GPU delegates, batching
+//  ✅ FIX #1: أُزيل Singleton pattern — كل isolate يعمل instance مستقلة
+//             (الـ Dart isolates لا تشارك الـ heap — Singleton وهمي هنا)
+//  ✅ FIX #2: dispose() آمن الآن لأن مفيش shared state بين الـ isolates
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ignore_for_file: avoid_print
@@ -26,14 +21,12 @@ import 'package:image/image.dart' as img;
 // 1. DATA MODELS
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// نتيجة inference — immutable value object.
 final class NsfwResult {
   final double nsfw;
   final double sfw;
 
   const NsfwResult({required this.nsfw, required this.sfw});
 
-  // Aliases للـ backward compatibility مع باقي الكود.
   double get porn => nsfw;
   double get hentai => 0.0;
   double get sexy => 0.0;
@@ -41,8 +34,6 @@ final class NsfwResult {
   double get drawings => 0.0;
 
   bool get isNsfw => nsfw > sfw;
-
-  /// Margin بين الـ classes — كلما زاد كلما كان القرار أوضح.
   double get margin => (nsfw - sfw).abs();
 
   @override
@@ -55,42 +46,36 @@ final class NsfwResult {
 // ──────────────────────────────────────────────────────────────────────────────
 
 enum NsfwServiceState {
-  idle, // لم يُهيأ بعد
-  loading, // initialize() جارية
-  ready, // جاهز للـ inference
-  failed, // فشل قابل للاسترداد
-  disposing, // dispose() جارية
-  disposed, // أُغلق نهائياً
+  idle,
+  loading,
+  ready,
+  failed,
+  disposing,
+  disposed,
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 3. CONFIGURATION
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// كل ثوابت الـ model في مكان واحد — سهل التغيير عند quantization أو re-export.
 final class _Cfg {
-  // Model
   static const String modelAsset = 'assets/models/model.onnx';
   static const String inputName = 'pixel_values';
   static const String outputName = 'logits';
 
-  // Preprocessing
-  static const int inputSize = 384;
+  static const int inputSize = 224;
   static const double normMean = 0.5;
   static const double normStd = 0.5;
 
-  // Warmup — صورة أصغر لتجنب تأخير أول inference حقيقي
-  static const int warmupSize = 64;
+  static const int warmupSize = 32;
 
-  // Timeouts
   static const Duration initTimeout = Duration(seconds: 30);
-  static const Duration inferTimeout = Duration(seconds: 15);
-  static const Duration preprocessLimit = Duration(seconds: 10);
-  static const Duration warmupTimeout = Duration(seconds: 20);
+  static const Duration inferTimeout = Duration(seconds: 10);
+  static const Duration preprocessLimit = Duration(seconds: 8);
+  static const Duration warmupTimeout = Duration(seconds: 15);
   static const Duration drainTimeout = Duration(seconds: 15);
   static const Duration recoveryDelay = Duration(seconds: 2);
 
-  // Retry policy
   static const int maxRecoveries = 3;
 }
 
@@ -114,10 +99,8 @@ abstract final class _Log {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 5. ISOLATE PREPROCESSING
-//    Top-level functions — شرط compute() إنها تكون خارج أي class.
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Args object لـ compute() — كل ما يحتاجه الـ isolate في struct واحد.
 final class _PreprocessArgs {
   final String imagePath;
   final int size;
@@ -127,12 +110,6 @@ final class _PreprocessArgs {
   const _PreprocessArgs(this.imagePath, this.size, this.mean, this.std);
 }
 
-/// يشتغل في isolate منفصل — zero UI jank.
-///
-/// Optimizations:
-///   • Float32List allocated مرة واحدة (no intermediate lists)
-///   • CHW layout محسوب مباشرة بدون transpose
-///   • Offsets محسوبة قبل الـ loops
 Future<Float32List> _preprocessIsolate(_PreprocessArgs a) async {
   final bytes = await File(a.imagePath).readAsBytes();
 
@@ -145,13 +122,13 @@ Future<Float32List> _preprocessIsolate(_PreprocessArgs a) async {
     decoded,
     width: a.size,
     height: a.size,
-    interpolation: img.Interpolation.linear, // أسرع من cubic مع دقة كافية
+    interpolation: img.Interpolation.linear,
   );
 
   final pixels = a.size * a.size;
   final buffer = Float32List(3 * pixels);
-  final g = pixels; // Green channel offset
-  final b = 2 * pixels; // Blue  channel offset
+  final g = pixels;
+  final b = 2 * pixels;
   final mean = a.mean;
   final std = a.std;
 
@@ -160,17 +137,15 @@ Future<Float32List> _preprocessIsolate(_PreprocessArgs a) async {
     for (var x = 0; x < a.size; x++) {
       final px = resized.getPixel(x, y);
       final idx = row + x;
-      buffer[idx] = (px.r / 255.0 - mean) / std; // R plane
-      buffer[g + idx] = (px.g / 255.0 - mean) / std; // G plane
-      buffer[b + idx] = (px.b / 255.0 - mean) / std; // B plane
+      buffer[idx] = (px.r / 255.0 - mean) / std;
+      buffer[g + idx] = (px.g / 255.0 - mean) / std;
+      buffer[b + idx] = (px.b / 255.0 - mean) / std;
     }
   }
 
   return buffer;
 }
 
-/// Warmup tensor — صورة سوداء في الذاكرة، بدون I/O.
-/// كل القيم = (0/255 - 0.5) / 0.5 = -1.0
 Float32List _buildWarmupTensor(int size) {
   final buf = Float32List(3 * size * size);
   buf.fillRange(0, buf.length, -1.0);
@@ -178,49 +153,41 @@ Float32List _buildWarmupTensor(int size) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 6. NSFW SERVICE — Singleton, Thread-safe, Resilient
+// 6. NSFW SERVICE
+//
+// ✅ FIX #1 & #2: أُزيل Singleton pattern تماماً
+//
+// السبب:
+//   - الـ Dart isolates لا تشارك الـ heap — كل isolate له memory مستقلة
+//   - الـ Singleton (static final _inst) يُنشأ من جديد في كل isolate
+//   - يعني الـ Singleton وهمي: ما بيمنعش تعدد الـ instances أصلاً
+//   - لكنه بيسبب مشكلة حقيقية: لو ScanQueue اتعمل dispose في isolate واحد
+//     → _state = disposed → الـ isolate التاني يلاقي service مقفولة ويـ throw
+//   - الحل: factory عادي — كل isolate يعمل instance مستقلة ويـ dispose نسخته
 // ──────────────────────────────────────────────────────────────────────────────
 
 class NsfwService {
-  // ── Singleton ──────────────────────────────────────────────────────────────
-  static final NsfwService _inst = NsfwService._();
-  factory NsfwService() => _inst;
-  NsfwService._();
+  // ✅ FIX: constructor عادي — لا Singleton
+  NsfwService();
 
-  // ── Internal state ─────────────────────────────────────────────────────────
   OrtSession? _session;
   NsfwServiceState _state = NsfwServiceState.idle;
   int _recoveries = 0;
 
-  /// Completer-based mutex — يمنع تعدد initialize() في نفس الوقت.
-  /// كل caller ينتظر نفس الـ future حتى يكتمل الـ init.
   Completer<void>? _initLock;
 
-  /// عداد الـ inferences النشطة — dispose ينتظر حتى يصل لـ 0.
   int _inflight = 0;
   final _drainedSignal = _ResettableCompleter();
 
-  // ── Public API ─────────────────────────────────────────────────────────────
-
-  /// State الحالية — مفيدة لـ UI diagnostics وlogging.
   NsfwServiceState get state => _state;
-
-  /// هل الـ service جاهز للـ inference؟
   bool get isReady => _state == NsfwServiceState.ready;
 
-  // ── initialize() ───────────────────────────────────────────────────────────
-
-  /// يحمّل الـ model ويُجهّز الـ session.
-  ///
-  /// Thread-safe: استدعاؤه من عدة places في نفس الوقت آمن تماماً.
-  /// Lazy: ممكن تستدعيه يدوياً أو يتعمل تلقائياً من predict().
   Future<void> initialize() async {
     switch (_state) {
       case NsfwServiceState.ready:
-        return; // ✅ جاهز — ما في حاجة
+        return;
 
       case NsfwServiceState.loading:
-        // ✅ في منتصف init — انتظر نفس الـ lock بدلاً من بدء init جديدة
         _Log.i('initialize() — awaiting ongoing init');
         final lock = _initLock;
         if (lock != null) await lock.future;
@@ -241,14 +208,13 @@ class NsfwService {
         }
         _Log.w('initialize() — retrying after failure '
             '(attempt ${_recoveries + 1}/${_Cfg.maxRecoveries})');
-        _state = NsfwServiceState.idle; // reset للمحاولة الجديدة
+        _state = NsfwServiceState.idle;
         break;
 
       case NsfwServiceState.idle:
         break;
     }
 
-    // ── فتح الـ mutex ──────────────────────────────────────────────────────
     _initLock = Completer<void>();
     _state = NsfwServiceState.loading;
 
@@ -260,7 +226,7 @@ class NsfwService {
         ),
       );
 
-      await _warmup(); // non-fatal — ما يوقفش الـ init لو فشل
+      await _warmup();
 
       _state = NsfwServiceState.ready;
       _recoveries = 0;
@@ -274,14 +240,6 @@ class NsfwService {
     }
   }
 
-  // ── predict() ──────────────────────────────────────────────────────────────
-
-  /// يحلل صورة ويرجع [NsfwResult].
-  ///
-  /// • Lazy init — يحمّل الـ model تلقائياً لو لسه ما اتعملش.
-  /// • Timeout-protected — ما يبقاش معلقاً إلى الأبد.
-  /// • Session recovery — يعيد المحاولة مرة عند session crash.
-  /// • Inflight guard — يحمي dispose من الـ race condition.
   Future<NsfwResult> predict(String imagePath) async {
     _assertUsable();
 
@@ -292,9 +250,6 @@ class NsfwService {
     return _guardedInference(() => _runPipeline(imagePath));
   }
 
-  // ── dispose() ──────────────────────────────────────────────────────────────
-
-  /// تنظيف نهائي — ينتظر كل الـ inferences النشطة قبل الإغلاق.
   Future<void> dispose() async {
     if (_state == NsfwServiceState.disposing ||
         _state == NsfwServiceState.disposed) return;
@@ -302,7 +257,6 @@ class NsfwService {
     _state = NsfwServiceState.disposing;
     _Log.i('dispose() — inflight=$_inflight');
 
-    // انتظر drain الـ inflight operations
     if (_inflight > 0) {
       await _drainedSignal.future.timeout(
         _Cfg.drainTimeout,
@@ -317,22 +271,16 @@ class NsfwService {
     _Log.i('disposed ✓');
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE — Inference pipeline
-  // ──────────────────────────────────────────────────────────────────────────
-
-  /// كامل الـ pipeline: preprocess → inference → extract result.
   Future<NsfwResult> _runPipeline(String imagePath) async {
     try {
       return await _executePipeline(imagePath);
     } on StateError catch (e) {
-      // Session corruption — محاولة recovery مرة واحدة
       if (_recoveries < _Cfg.maxRecoveries &&
           _state == NsfwServiceState.ready) {
         _Log.w('session error — attempting recovery', e);
         await _recoverSession();
         _Log.i('retrying inference after recovery');
-        return _executePipeline(imagePath); // second and final attempt
+        return _executePipeline(imagePath);
       }
       _Log.e('inference failure — no recovery attempts left', e);
       rethrow;
@@ -345,7 +293,6 @@ class NsfwService {
   Future<NsfwResult> _executePipeline(String imagePath) async {
     _assertUsable();
 
-    // ── Step 1: Preprocessing في isolate ─────────────────────────────────
     final args =
         _PreprocessArgs(imagePath, _Cfg.inputSize, _Cfg.normMean, _Cfg.normStd);
 
@@ -356,7 +303,6 @@ class NsfwService {
       ),
     );
 
-    // ── Guard بعد isolate — ممكن dispose اتعمل أثناءه ─────────────────────
     _assertUsable();
 
     final session = _session;
@@ -366,13 +312,11 @@ class NsfwService {
       );
     }
 
-    // ── Step 2: Build input tensor ───────────────────────────────────────
     final inputTensor = await OrtValue.fromList(
       buffer,
       [1, 3, _Cfg.inputSize, _Cfg.inputSize],
     );
 
-    // ── Step 3: Inference مع timeout ─────────────────────────────────────
     Map<String, OrtValue>? outputs;
     try {
       outputs = await session.run({_Cfg.inputName: inputTensor}).timeout(
@@ -383,70 +327,49 @@ class NsfwService {
         ),
       );
 
-      // ── Step 4: Null-safe result extraction ──────────────────────────
       return await _extractResult(outputs);
     } finally {
-      // ── Cleanup — دايماً حتى عند exceptions ─────────────────────────
       await _disposeTensor(inputTensor);
       if (outputs != null) await _disposeOutputs(outputs);
     }
   }
 
-  /// استخرج النتيجة من outputs مع null-safety كاملة وvalidation شامل.
   Future<NsfwResult> _extractResult(Map<String, OrtValue> outputs) async {
-    // ── Null-safe output lookup ───────────────────────────────────────────
     final logitsTensor = outputs[_Cfg.outputName];
     if (logitsTensor == null) {
       final available = outputs.keys.join(', ');
       throw StateError(
         'Model output key "${_Cfg.outputName}" not found. '
-        'Available: [$available]. '
-        'Update _Cfg.outputName to match your model export.',
+        'Available: [$available].',
       );
     }
 
-    // ── Extract values ────────────────────────────────────────────────────
     final flat = await logitsTensor.asFlattenedList();
 
     if (flat.length < 2) {
       throw StateError(
-        'logits tensor has ${flat.length} element(s), expected ≥ 2. '
-        'Model architecture mismatch — check ONNX export.',
+        'logits tensor has ${flat.length} element(s), expected ≥ 2.',
       );
     }
 
     final l0 = (flat[0] as num).toDouble();
     final l1 = (flat[1] as num).toDouble();
 
-    // ── NaN/Inf guard — يحمي من broken quantized models ─────────────────
     if (!l0.isFinite || !l1.isFinite) {
-      throw StateError(
-        'Non-finite logits: [$l0, $l1]. '
-        'Model may produce NaN/Inf — check quantization or model corruption.',
-      );
+      throw StateError('Non-finite logits: [$l0, $l1].');
     }
 
     final probs = _softmax([l0, l1]);
     return NsfwResult(nsfw: probs[0], sfw: probs[1]);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE — Model lifecycle
-  // ──────────────────────────────────────────────────────────────────────────
-
   Future<void> _loadModel() async {
     _Log.i('loading model: ${_Cfg.modelAsset}');
-    // ─ Architecture hook: لدعم GPU delegates أضف SessionOptions هنا ─────
-    //   final options = OrtSessionOptions()..addCoreMLDelegate();
-    //   _session = await ort.createSessionFromAsset(path, options: options);
-    // ─────────────────────────────────────────────────────────────────────
     final ort = OnnxRuntime();
     _session = await ort.createSessionFromAsset(_Cfg.modelAsset);
     _Log.i('model loaded');
   }
 
-  /// Warmup inference — يُحرّك الـ JIT cache لتحسين أول inference حقيقي.
-  /// Non-fatal: لو فشل الـ warmup نكمل بدونه.
   Future<void> _warmup() async {
     _Log.i('warmup starting ...');
     final session = _session;
@@ -498,28 +421,19 @@ class NsfwService {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE — Inflight guard
-  // ──────────────────────────────────────────────────────────────────────────
-
-  /// يُغلّف أي inference operation ويتتبع الـ inflight count.
   Future<T> _guardedInference<T>(Future<T> Function() fn) async {
     _inflight++;
-    _drainedSignal.reset(); // يفتح الـ gate لما في ops نشطة
+    _drainedSignal.reset();
 
     try {
       return await fn();
     } finally {
       _inflight--;
       if (_inflight == 0) {
-        _drainedSignal.complete(); // signal للـ dispose
+        _drainedSignal.complete();
       }
     }
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE — Math
-  // ──────────────────────────────────────────────────────────────────────────
 
   List<double> _softmax(List<double> logits) {
     final max = logits.reduce(math.max);
@@ -527,10 +441,6 @@ class NsfwService {
     final sum = exps.reduce((a, b) => a + b);
     return exps.map((e) => e / sum).toList();
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE — Guards & safe dispose
-  // ──────────────────────────────────────────────────────────────────────────
 
   void _assertUsable() {
     if (_state == NsfwServiceState.disposing ||
@@ -562,7 +472,6 @@ class NsfwService {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 7. RESETTABLE COMPLETER UTILITY
-//    يسمح بـ reset الـ completer بعد complete — لإشارة drain متكررة.
 // ──────────────────────────────────────────────────────────────────────────────
 
 class _ResettableCompleter {

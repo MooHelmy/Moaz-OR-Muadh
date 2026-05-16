@@ -49,8 +49,10 @@ class ShieldStateService {
 
   static Future<Directory?> _stateDirectory() async {
     try {
-      final baseDir = await getExternalStorageDirectory();
-      if (baseDir == null) return null;
+      // ✅ FIX: getApplicationDocumentsDirectory بدل getExternalStorageDirectory
+      // External storage: يُفقد لو الـ SD card اتنزعت، ومش محتاج permissions زيادة
+      // App documents: خاص بالتطبيق، محمي، وبيستمر طالما التطبيق موجود
+      final baseDir = await getApplicationDocumentsDirectory();
       final dir = Directory('${baseDir.path}/$_directoryName');
       if (!await dir.exists()) {
         await dir.create(recursive: true);
@@ -111,6 +113,7 @@ class ShieldStateService {
       antiUninstallActive: state.antiUninstallActive,
       antiUninstallPin: state.antiUninstallPin,
       accessibilityPin: state.accessibilityPin,
+      adminPin: state.adminPin, // ✅ FIX: كان ناقص → data loss bug
     ));
   }
 
@@ -122,6 +125,7 @@ class ShieldStateService {
       antiUninstallActive: value,
       antiUninstallPin: state.antiUninstallPin,
       accessibilityPin: state.accessibilityPin,
+      adminPin: state.adminPin, // ✅ FIX: كان ناقص → data loss bug
     ));
   }
 
@@ -133,6 +137,7 @@ class ShieldStateService {
       antiUninstallActive: state.antiUninstallActive,
       antiUninstallPin: pin,
       accessibilityPin: state.accessibilityPin,
+      adminPin: state.adminPin, // ✅ FIX: كان ناقص → يُفقد الـ admin PIN
     ));
   }
 
@@ -144,6 +149,7 @@ class ShieldStateService {
       antiUninstallActive: state.antiUninstallActive,
       antiUninstallPin: state.antiUninstallPin,
       accessibilityPin: pin,
+      adminPin: state.adminPin, // ✅ FIX: كان ناقص → يُفقد الـ admin PIN
     ));
   }
 

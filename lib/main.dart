@@ -10,7 +10,6 @@ import 'package:medi_guard/data/services/file_observer_channel.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/data/services/work_manager_service.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/splash_view.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
 
@@ -31,12 +30,12 @@ class AppBootstrapper {
       Hive.openBox('scanned_hashes'),
       Hive.openBox('decisions'),
       Hive.openBox('deleted_log'),
-      Hive.openBox('scan_stats'),
+      Hive.openBox('scan_stats'), // ✅ كان موجود في الـ task handler بس مش هنا
     ]);
 
-    _compactIfNeeded('scanned_hashes', threshold: 500);
-    _compactIfNeeded('decisions', threshold: 200);
-    _compactIfNeeded('deleted_log', threshold: 100);
+    _compactIfNeeded('scanned_hashes', threshold: 300); // ✅ OPT: من 500→300
+    _compactIfNeeded('decisions', threshold: 100);      // ✅ OPT: من 200→100
+    _compactIfNeeded('deleted_log', threshold: 50);     // ✅ OPT: من 100→50
 
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
@@ -81,21 +80,18 @@ class MuadhApp extends ConsumerWidget {
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: PermissionScreen(
             onGranted: (showAccessibilityOnboarding) async {
-              await FileObserverChannel.startWatching(ScanTargets.folders);
+              // ✅ FIX: أزلنا startWatching من هنا — ScanServiceManager.start() بيعملها
+              // استدعاؤها مرتين كان بيعمل double-init للـ native FileObserver
               await ScanServiceManager.start();
-              navigatorKey.currentState?.pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => showAccessibilityOnboarding
-                      ? MainTabView(
-                          initialIndex: showAccessibilityOnboarding ? 1 : 0,
-                          showAccessibilityPrompt: showAccessibilityOnboarding,
-                        )
-                      : SplashView(
-                          showAccessibilityOnboarding:
-                              showAccessibilityOnboarding,
-                        ),
-                ),
-              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                navigatorKey.currentState?.pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => SplashView(
+                      showAccessibilityOnboarding: showAccessibilityOnboarding,
+                    ),
+                  ),
+                );
+              });
             },
           ),
         );

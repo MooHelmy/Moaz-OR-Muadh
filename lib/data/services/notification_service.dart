@@ -25,7 +25,7 @@ class ScanNotificationService {
 
     // ─── إشعار فردي للملف المحذوف ──────────────────────────────
     await _plugin.show(
-      _deleteCount, // ID مختلف لكل ملف
+      _deleteCount % 8999, // ✅ FIX: cap الـ ID عشان ما يتجاوزش الـ _summaryId=9000
       '🛡️ معاذ — تم الحذف',
       'تم حذف "$fileName"',
       NotificationDetails(

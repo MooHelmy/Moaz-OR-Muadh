@@ -50,8 +50,12 @@ class _CustomRankCardState extends State<CustomRankCard> {
       newIndex = 5;
     } else if (180 <= loadedDays && loadedDays < 365) {
       newIndex = 6;
+    } else if (365 <= loadedDays && loadedDays < 730) {
+      newIndex = 7; // سنة
+    } else if (730 <= loadedDays && loadedDays < 1095) {
+      newIndex = 8; // سنتين
     } else {
-      newIndex = 7;
+      newIndex = 9; // ✅ FIX: المرتبة الأعلى — 3 سنوات+، كانت مستحيلة الوصول
     }
 
     if (!mounted) return;

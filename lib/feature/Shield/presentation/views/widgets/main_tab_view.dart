@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:medi_guard/core/utils/ai_black_list_service.dart';
-import 'package:medi_guard/feature/Progress/presentation/view/monitoring_view.dart';
-import 'package:medi_guard/feature/Progress/presentation/view/progress_view.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/shield_view.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
 import 'package:medi_guard/feature/Shield/presentation/views/widgets/shield_channel.dart';
 import 'package:medi_guard/feature/home/presentation/views/home_view.dart';
+import 'package:medi_guard/feature/monitoring/presentation/view/monitoring_view.dart';
 
 class MainTabView extends StatefulWidget {
   final int initialIndex;
@@ -61,7 +60,6 @@ class _MainTabViewState extends State<MainTabView> {
           HomeView(),
           ShieldView(),
           MonitoringView(),
-          ProgressView(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

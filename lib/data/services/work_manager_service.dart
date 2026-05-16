@@ -24,11 +24,13 @@ class WorkManagerService {
     await Workmanager().registerPeriodicTask(
       'periodic_deep_scan',
       'deepScanTask',
-      frequency: const Duration(hours: 1),
+      // ✅ OPT: كل 6 ساعات بدل ساعة — FileObserver بيغطي الجديد فوراً
+      // الـ deep scan للملفات اللي فاتت بس — مش لازم كل ساعة
+      frequency: const Duration(hours: 6),
       constraints: Constraints(
-        // ✅ Fix: workmanager ^0.7.0 غيّر snake_case لـ camelCase
         networkType: NetworkType.not_required,
         requiresBatteryNotLow: true,
+        requiresDeviceIdle: true, // ✅ OPT: يشتغل فقط لما الجهاز مش مستخدم
       ),
       existingWorkPolicy: ExistingWorkPolicy.keep,
     );
@@ -48,7 +50,13 @@ void callbackDispatcher() {
 Future<void> _runDeepScan() async {
   await Hive.initFlutter();
 
-  await Hive.openBox('scanned_hashes');
+  // ✅ OPT: فتح كل الـ boxes المطلوبة — نفس الـ main app
+  await Future.wait([
+    Hive.openBox('scanned_hashes'),
+    Hive.openBox('decisions'),
+    Hive.openBox('scan_stats'),
+    Hive.openBox('deleted_log'),
+  ]);
 
   final nsfwService = NsfwService();
   await nsfwService.initialize();
@@ -72,7 +80,8 @@ Future<void> _runDeepScan() async {
     if (!await dir.exists()) continue;
     await for (final entity in dir.list(recursive: true)) {
       // ✅ فحص الصور فقط لتجنب أخطاء الـ Decode في الفيديوهات
-      if (entity is File && ScanTargets.isImage(entity.path)) {
+      // ✅ FIX: isMediaFile بدل isImage — يشمل الفيديوهات أيضاً
+      if (entity is File && ScanTargets.isMediaFile(entity.path)) {
         queue.add(entity.path);
       }
     }
