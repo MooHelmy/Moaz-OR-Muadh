@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
@@ -26,9 +25,11 @@ Future<double> _analyzeSkinInIsolate(Uint8List bytes) async {
       final b = pixel.b.toInt();
 
       // Rule 1: RGB-based (Kovac et al.)
-      final rule1 = r > 95 && g > 40 && b > 20 && (r - g).abs() > 15 && r > g && r > b;
+      final rule1 =
+          r > 95 && g > 40 && b > 20 && (r - g).abs() > 15 && r > g && r > b;
       // Rule 2: للبشرة الداكنة
-      final rule2 = r > 60 && g > 30 && b > 15 && r > b && (r - b) > 20 && r > 80;
+      final rule2 =
+          r > 60 && g > 30 && b > 15 && r > b && (r - b) > 20 && r > 80;
       // Rule 3: HSV-based
       final maxC = [r, g, b].reduce((a, b) => a > b ? a : b);
       final minC = [r, g, b].reduce((a, b) => a < b ? a : b);

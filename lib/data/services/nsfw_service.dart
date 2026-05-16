@@ -11,7 +11,6 @@
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
@@ -294,13 +293,13 @@ class NsfwService {
   Future<NsfwResult> _executePipeline(Uint8List imageBytes) async {
     _assertUsable();
 
-    final args =
-        _PreprocessArgs(imageBytes, _Cfg.inputSize, _Cfg.normMean, _Cfg.normStd);
+    final args = _PreprocessArgs(
+        imageBytes, _Cfg.inputSize, _Cfg.normMean, _Cfg.normStd);
 
     final buffer = await compute(_preprocessIsolate, args).timeout(
       _Cfg.preprocessLimit,
       onTimeout: () => throw TimeoutException(
-        'Preprocessing timed out: $imagePath',
+        'Preprocessing timed out: $imageBytes (${imageBytes.length} bytes)',
       ),
     );
 
@@ -324,7 +323,7 @@ class NsfwService {
         _Cfg.inferTimeout,
         onTimeout: () => throw TimeoutException(
           'Inference timed out (${_Cfg.inferTimeout.inSeconds}s): '
-          '$imagePath',
+          '$imageBytes (${imageBytes.length} bytes)',
         ),
       );
 

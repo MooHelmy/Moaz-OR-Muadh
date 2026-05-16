@@ -29,7 +29,6 @@ class MainActivity : FlutterActivity() {
     private val DELETE_CHANNEL      = "com.maadh.shield/delete"
     private val ADMIN_CHANNEL       = "com.maadh.shield/admin"
     private val VIDEO_META_CHANNEL  = "medi_guard/video_metadata"
-    private val DEVICE_INFO_CHANNEL = "medi_guard/device_info"
 
     private var eventSink: EventChannel.EventSink? = null
     private val observers = mutableListOf<FileObserver>()
@@ -53,37 +52,6 @@ class MainActivity : FlutterActivity() {
         setupDeleteChannel(flutterEngine)
         setupAdminChannel(flutterEngine)
         setupVideoMetadataChannel(flutterEngine)
-        setupDeviceInfoChannel(flutterEngine)
-    }
-
-    // ─── Device Info Channel ───────────────────────────────────────────────────
-    // يُرجع hardware specs للـ Flutter لتحديد concurrency level المناسب
-    // لا يحتاج صلاحيات خاصة — كل المعلومات متاحة بدون permissions
-    private fun setupDeviceInfoChannel(flutterEngine: FlutterEngine) {
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memInfo = ActivityManager.MemoryInfo()
-        am.getMemoryInfo(memInfo)
-
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            DEVICE_INFO_CHANNEL
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getDeviceCapabilities" -> {
-                    result.success(mapOf(
-                        // عدد أنوية الـ CPU المتاحة للتطبيق
-                        "cpuCores"       to Runtime.getRuntime().availableProcessors(),
-                        // إجمالي RAM بالميجابايت
-                        "totalRamMb"     to (memInfo.totalMem / (1024 * 1024)).toInt(),
-                        // هل الجهاز low-RAM (ActivityManager classification)
-                        "isLowRamDevice" to am.isLowRamDevice,
-                        // Android SDK version — للمقارنة إذا احتجنا
-                        "sdkInt"         to Build.VERSION.SDK_INT,
-                    ))
-                }
-                else -> result.notImplemented()
-            }
-        }
     }
 
     // ─── Video Metadata Channel ────────────────────────────────────────────────
