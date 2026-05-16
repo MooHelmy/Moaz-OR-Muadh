@@ -10,8 +10,8 @@ import 'package:medi_guard/data/services/file_observer_channel.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/data/services/work_manager_service.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/splash_view.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
+import 'package:medi_guard/feature/splash/presentation/view/splash_view.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -34,8 +34,8 @@ class AppBootstrapper {
     ]);
 
     _compactIfNeeded('scanned_hashes', threshold: 300); // ✅ OPT: من 500→300
-    _compactIfNeeded('decisions', threshold: 100);      // ✅ OPT: من 200→100
-    _compactIfNeeded('deleted_log', threshold: 50);     // ✅ OPT: من 100→50
+    _compactIfNeeded('decisions', threshold: 100); // ✅ OPT: من 200→100
+    _compactIfNeeded('deleted_log', threshold: 50); // ✅ OPT: من 100→50
 
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
@@ -80,8 +80,7 @@ class MuadhApp extends ConsumerWidget {
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: PermissionScreen(
             onGranted: (showAccessibilityOnboarding) async {
-              // ✅ FIX: أزلنا startWatching من هنا — ScanServiceManager.start() بيعملها
-              // استدعاؤها مرتين كان بيعمل double-init للـ native FileObserver
+              await FileObserverChannel.startWatching(ScanTargets.folders);
               await ScanServiceManager.start();
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 navigatorKey.currentState?.pushReplacement(

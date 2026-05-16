@@ -63,11 +63,11 @@ final class _Cfg {
   static const String inputName = 'pixel_values';
   static const String outputName = 'logits';
 
-  static const int inputSize = 224;
+  static const int inputSize = 384;
   static const double normMean = 0.5;
   static const double normStd = 0.5;
 
-  static const int warmupSize = 32;
+  static const int warmupSize = 384;
 
   static const Duration initTimeout = Duration(seconds: 30);
   static const Duration inferTimeout = Duration(seconds: 10);

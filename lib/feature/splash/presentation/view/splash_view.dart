@@ -70,28 +70,32 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
 
     generateParticles();
 
-    _mainController.forward();
-
-    Timer(const Duration(milliseconds: 6200), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => MainTabView(
-            showAccessibilityPrompt: widget.showAccessibilityOnboarding,
-          ),
-        ),
-      );
+    _mainController.forward().then((_) {
+      if (mounted) {
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => MainTabView(
+                  showAccessibilityPrompt: widget.showAccessibilityOnboarding,
+                ),
+              ),
+            );
+          }
+        });
+      }
     });
   }
 
   void generateParticles() {
     final random = Random();
-
+    // نستخدم أبعاد افتراضية جيدة أو نعتمد على الحجم الفعلي لاحقاً
     for (int i = 0; i < 45; i++) {
       particles.add(
         Particle(
           offset: Offset(
-            random.nextDouble() * 500,
-            random.nextDouble() * 900,
+            random.nextDouble() * 400,
+            random.nextDouble() * 800,
           ),
           radius: random.nextDouble() * 3 + 1,
           speed: random.nextDouble() * 0.6 + 0.2,
@@ -145,7 +149,7 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      width: 320,
+                      width: 350,
                       height: 180,
                       child: Stack(
                         alignment: Alignment.center,
@@ -196,9 +200,9 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
 
                           // TECH TEXT
                           Positioned(
-                            right: 0,
+                            right: 20,
                             child: Opacity(
-                              opacity: _techReveal.value,
+                              opacity: _techReveal.value.clamp(0.0, 1.0),
                               child: Transform.translate(
                                 offset: Offset(
                                   0,
@@ -238,7 +242,7 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
 
                     // PRESENT
                     Opacity(
-                      opacity: _presentReveal.value,
+                      opacity: _presentReveal.value.clamp(0.0, 1.0),
                       child: Transform.translate(
                         offset: Offset(
                           0,
@@ -304,8 +308,27 @@ class BetaPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final path = Path();
-
     final startX = size.width * 0.30;
+
+    // تعريف الـ Paint Objects مرة واحدة خارج الـ Loop لتحسين الأداء
+    final glowPaint = Paint()
+      ..color = const Color(0xFF64B5FF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+
+    final linePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+
+    final sparkOuter = Paint()
+      ..color = const Color(0xFF64B5FF).withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+
+    final sparkInner = Paint()..color = Colors.white;
 
     path.moveTo(startX, size.height * 0.08);
 
@@ -335,22 +358,6 @@ class BetaPainter extends CustomPainter {
 
     final metrics = path.computeMetrics();
 
-    final glowPaint = Paint()
-      ..color = const Color(0xFF64B5FF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(
-        BlurStyle.normal,
-        14,
-      );
-
-    final linePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-
     for (final metric in metrics) {
       final extract = metric.extractPath(
         0,
@@ -366,26 +373,8 @@ class BetaPainter extends CustomPainter {
       );
 
       if (tangent != null) {
-        final sparkOuter = Paint()
-          ..color = const Color(0xFF64B5FF).withOpacity(0.4)
-          ..maskFilter = const MaskFilter.blur(
-            BlurStyle.normal,
-            18,
-          );
-
-        final sparkInner = Paint()..color = Colors.white;
-
-        canvas.drawCircle(
-          tangent.position,
-          14,
-          sparkOuter,
-        );
-
-        canvas.drawCircle(
-          tangent.position,
-          4,
-          sparkInner,
-        );
+        canvas.drawCircle(tangent.position, 14, sparkOuter);
+        canvas.drawCircle(tangent.position, 4, sparkInner);
       }
     }
   }
