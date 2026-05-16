@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:medi_guard/data/services/face_service.dart';
 import 'package:medi_guard/data/services/nsfw_service.dart';
 import 'package:medi_guard/data/services/skin_service.dart';
@@ -26,16 +28,17 @@ class EnsembleScorer {
     required this.skinService,
   });
 
-  Future<ScoredResult> score(String path) async {
+  // ✅ FIX: يقبل Uint8List بدل file path — zero disk IO
+  // الـ bytes بتيجي من thumbnailData() مباشرة من memory
+  Future<ScoredResult> score(Uint8List imageBytes) async {
     // ✅ OPT: نشغّل الـ NSFW model أول — لو النتيجة واضحة نوقف الباقي
     // هيوفر 25% من الـ CPU في الحالات الواضحة (NSFW جداً أو SFW جداً)
-    final nsfw = await nsfwService.predict(path);
+    final nsfw = await nsfwService.predict(imageBytes);
 
     // ✅ Early exit للحالات الواضحة — مش محتاجين Face/Skin
     if (nsfw.nsfw > 0.85 || nsfw.sfw > 0.85) {
       final nsfwScore = nsfw.nsfw;
       return ScoredResult(
-        path: path,
         weighted: (nsfwScore * wNsfw).clamp(0.0, 1.0),
         nsfwScore: nsfwScore,
         faceScore: 0.0,
@@ -49,8 +52,8 @@ class EnsembleScorer {
 
     // ✅ المنطقة الرمادية — نشغّل Face/Skin بالتوازي لتحسين القرار
     final results = await Future.wait([
-      faceService.analyze(path),
-      skinService.analyze(path),
+      faceService.analyze(imageBytes),
+      skinService.analyze(imageBytes),
     ]);
 
     final face = results[0] as FaceResult;
@@ -58,38 +61,25 @@ class EnsembleScorer {
     final nsfwScore = nsfw.nsfw;
 
     // ✅ حساب معامل التأثير لـ Face و Skin بناءً على درجة NSFW
-    //
-    // المنطق: Face/Skin لوحدهم مش بيحكموا — بس لو NSFW model شايف
-    // إن فيه حاجة مريبة، هيزودوا الـ weighted score ويساعدوا في القرار.
-    //
-    // لو صورة عادية (NSFW < 20%) → Face/Skin مش بيؤثروا خالص
-    // لو NSFW في المنطقة الرمادية (20-50%) → Face/Skin بيؤثروا بنسبة
-    // لو NSFW عالي (> 50%) → Face/Skin بيكملوا الصورة بكامل وزنهم
     final double amplifier;
     if (nsfwScore < _nsfwLowThreshold) {
-      amplifier = 0.0; // NSFW model مطمن → Face/Skin لا يؤثران
+      amplifier = 0.0;
     } else if (nsfwScore > _nsfwHighThreshold) {
-      amplifier = 1.0; // NSFW عالي → Face/Skin بيكملوا
+      amplifier = 1.0;
     } else {
-      // linear interpolation بين 0 و 1
       amplifier = (nsfwScore - _nsfwLowThreshold) /
           (_nsfwHighThreshold - _nsfwLowThreshold);
     }
 
-    // درجة الوجه: وجه واحد مع NSFW مريب = أكثر ريبة من وجوه كتيرة
     final rawFaceScore = face.hasFace ? (face.faceCount == 1 ? 0.5 : 0.3) : 0.0;
     final faceScore = rawFaceScore * amplifier;
-
-    // درجة الجلد: بنضربها في المعامل
     final rawSkinScore = skin.ratio;
     final skinScore = rawSkinScore * amplifier;
 
-    // Weighted ensemble
     final weighted =
         (nsfwScore * wNsfw) + (skinScore * wSkin) + (faceScore * wFace);
 
     return ScoredResult(
-      path: path,
       weighted: weighted.clamp(0.0, 1.0),
       nsfwScore: nsfwScore,
       faceScore: faceScore,
@@ -103,7 +93,7 @@ class EnsembleScorer {
 }
 
 class ScoredResult {
-  final String path;
+  // ✅ FIX: أُزيل حقل path — ScoredResult لا يحتاج path بعد التحول لـ bytes
   final double weighted;
   final double nsfwScore;
   final double faceScore;   // بعد تطبيق الـ amplifier
@@ -114,7 +104,6 @@ class ScoredResult {
   final NsfwResult rawNsfw;
 
   const ScoredResult({
-    required this.path,
     required this.weighted,
     required this.nsfwScore,
     required this.faceScore,

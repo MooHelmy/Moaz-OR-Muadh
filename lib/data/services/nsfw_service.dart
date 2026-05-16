@@ -10,8 +10,8 @@
 // ignore_for_file: avoid_print
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
@@ -102,20 +102,20 @@ abstract final class _Log {
 // ──────────────────────────────────────────────────────────────────────────────
 
 final class _PreprocessArgs {
-  final String imagePath;
+  // ✅ FIX: Uint8List بدل file path — zero disk IO
+  // الـ bytes بتيجي من thumbnailData() مباشرة من memory
+  final Uint8List bytes;
   final int size;
   final double mean;
   final double std;
 
-  const _PreprocessArgs(this.imagePath, this.size, this.mean, this.std);
+  const _PreprocessArgs(this.bytes, this.size, this.mean, this.std);
 }
 
 Future<Float32List> _preprocessIsolate(_PreprocessArgs a) async {
-  final bytes = await File(a.imagePath).readAsBytes();
-
-  final decoded = img.decodeImage(bytes);
+  final decoded = img.decodeImage(a.bytes);
   if (decoded == null) {
-    throw StateError('Failed to decode image: ${a.imagePath}');
+    throw StateError('Failed to decode image bytes (${a.bytes.length} bytes)');
   }
 
   final resized = img.copyResize(
@@ -240,14 +240,15 @@ class NsfwService {
     }
   }
 
-  Future<NsfwResult> predict(String imagePath) async {
+  // ✅ FIX: يقبل Uint8List بدل file path — zero disk read
+  Future<NsfwResult> predict(Uint8List imageBytes) async {
     _assertUsable();
 
     if (_state != NsfwServiceState.ready) {
       await initialize();
     }
 
-    return _guardedInference(() => _runPipeline(imagePath));
+    return _guardedInference(() => _runPipeline(imageBytes));
   }
 
   Future<void> dispose() async {
@@ -271,16 +272,16 @@ class NsfwService {
     _Log.i('disposed ✓');
   }
 
-  Future<NsfwResult> _runPipeline(String imagePath) async {
+  Future<NsfwResult> _runPipeline(Uint8List imageBytes) async {
     try {
-      return await _executePipeline(imagePath);
+      return await _executePipeline(imageBytes);
     } on StateError catch (e) {
       if (_recoveries < _Cfg.maxRecoveries &&
           _state == NsfwServiceState.ready) {
         _Log.w('session error — attempting recovery', e);
         await _recoverSession();
         _Log.i('retrying inference after recovery');
-        return _executePipeline(imagePath);
+        return _executePipeline(imageBytes);
       }
       _Log.e('inference failure — no recovery attempts left', e);
       rethrow;
@@ -290,11 +291,11 @@ class NsfwService {
     }
   }
 
-  Future<NsfwResult> _executePipeline(String imagePath) async {
+  Future<NsfwResult> _executePipeline(Uint8List imageBytes) async {
     _assertUsable();
 
     final args =
-        _PreprocessArgs(imagePath, _Cfg.inputSize, _Cfg.normMean, _Cfg.normStd);
+        _PreprocessArgs(imageBytes, _Cfg.inputSize, _Cfg.normMean, _Cfg.normStd);
 
     final buffer = await compute(_preprocessIsolate, args).timeout(
       _Cfg.preprocessLimit,

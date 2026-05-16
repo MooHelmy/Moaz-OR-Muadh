@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
@@ -7,10 +7,9 @@ class SkinResult {
   const SkinResult({required this.ratio});
 }
 
-// ✅ OPT: Top-level function للـ compute() — يشتغل في isolate منفصل
-// يمنع blocking الـ UI thread أثناء تحليل البكسلات
-Future<double> _analyzeSkinInIsolate(String imagePath) async {
-  final bytes = await File(imagePath).readAsBytes();
+// ✅ FIX: يقبل Uint8List بدل file path — zero disk IO
+// الـ bytes بتيجي من thumbnailData() مباشرة من memory
+Future<double> _analyzeSkinInIsolate(Uint8List bytes) async {
   final image = img.decodeImage(bytes);
   if (image == null) return 0.0;
 
@@ -45,10 +44,11 @@ Future<double> _analyzeSkinInIsolate(String imagePath) async {
 }
 
 class SkinService {
-  Future<SkinResult> analyze(String imagePath) async {
+  // ✅ FIX: يقبل Uint8List بدل file path — zero disk IO
+  Future<SkinResult> analyze(Uint8List imageBytes) async {
     try {
       // ✅ OPT: compute() = isolate منفصل → لا يبطّئ الـ UI أو الـ scan thread
-      final ratio = await compute(_analyzeSkinInIsolate, imagePath);
+      final ratio = await compute(_analyzeSkinInIsolate, imageBytes);
       return SkinResult(ratio: ratio);
     } catch (_) {
       return const SkinResult(ratio: 0.0);

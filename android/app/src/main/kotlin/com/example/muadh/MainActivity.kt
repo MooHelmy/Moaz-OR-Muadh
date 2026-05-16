@@ -1,13 +1,16 @@
 package com.example.muadh
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.MediaMetadataRetriever
 import android.net.VpnService
+import android.os.Build
 import android.os.FileObserver
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
@@ -25,6 +28,8 @@ class MainActivity : FlutterActivity() {
     private val FILE_EVENT_CHANNEL  = "medi_guard/file_events"
     private val DELETE_CHANNEL      = "com.maadh.shield/delete"
     private val ADMIN_CHANNEL       = "com.maadh.shield/admin"
+    private val VIDEO_META_CHANNEL  = "medi_guard/video_metadata"
+    private val DEVICE_INFO_CHANNEL = "medi_guard/device_info"
 
     private var eventSink: EventChannel.EventSink? = null
     private val observers = mutableListOf<FileObserver>()
@@ -47,6 +52,81 @@ class MainActivity : FlutterActivity() {
         setupFileObserverChannel(flutterEngine)
         setupDeleteChannel(flutterEngine)
         setupAdminChannel(flutterEngine)
+        setupVideoMetadataChannel(flutterEngine)
+        setupDeviceInfoChannel(flutterEngine)
+    }
+
+    // ─── Device Info Channel ───────────────────────────────────────────────────
+    // يُرجع hardware specs للـ Flutter لتحديد concurrency level المناسب
+    // لا يحتاج صلاحيات خاصة — كل المعلومات متاحة بدون permissions
+    private fun setupDeviceInfoChannel(flutterEngine: FlutterEngine) {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(memInfo)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_INFO_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getDeviceCapabilities" -> {
+                    result.success(mapOf(
+                        // عدد أنوية الـ CPU المتاحة للتطبيق
+                        "cpuCores"       to Runtime.getRuntime().availableProcessors(),
+                        // إجمالي RAM بالميجابايت
+                        "totalRamMb"     to (memInfo.totalMem / (1024 * 1024)).toInt(),
+                        // هل الجهاز low-RAM (ActivityManager classification)
+                        "isLowRamDevice" to am.isLowRamDevice,
+                        // Android SDK version — للمقارنة إذا احتجنا
+                        "sdkInt"         to Build.VERSION.SDK_INT,
+                    ))
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    // ─── Video Metadata Channel ────────────────────────────────────────────────
+    // يستخدم MediaMetadataRetriever لاستخراج مدة الفيديو بدون decode أي frame
+    // أسرع بكثير من thumbnail probing — لا يوجد video decode أو JPEG encoding
+    private fun setupVideoMetadataChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            VIDEO_META_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getVideoMetadata" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("NO_PATH", "path is null", null)
+                        return@setMethodCallHandler
+                    }
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(path)
+                        val durationStr = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_DURATION
+                        )
+                        val widthStr = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                        )
+                        val heightStr = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                        )
+                        result.success(mapOf(
+                            "durationMs" to (durationStr?.toLongOrNull() ?: 0L),
+                            "width"      to (widthStr?.toIntOrNull()    ?: 0),
+                            "height"     to (heightStr?.toIntOrNull()   ?: 0),
+                        ))
+                    } catch (e: Exception) {
+                        result.error("RETRIEVER_ERROR", e.message, null)
+                    } finally {
+                        retriever.release()
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     // ─── Anti-Uninstall / Admin Channel ───────────────────────────────────────
