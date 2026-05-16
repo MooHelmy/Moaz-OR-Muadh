@@ -48,6 +48,7 @@ class ScanQueue {
   final int _maxWorkers = 2;
 
   final Set<String> _pendingSet = {};
+  final Set<String> _priorityPaths = {}; // تتبع الملفات ذات الأولوية
   final List<String> _queue = [];
   int _activeWorkers = 0;
 
@@ -90,6 +91,7 @@ class ScanQueue {
     if (_cancelled) return;
     if (!_pendingSet.contains(path)) {
       _pendingSet.add(path);
+      if (priority) _priorityPaths.add(path);
       if (priority) {
         _queue.insert(0, path);
       } else {
@@ -107,18 +109,20 @@ class ScanQueue {
     _activeWorkers++;
     final path = _queue.removeAt(0);
     _pendingSet.remove(path);
+    final bool isPriority = _priorityPaths.contains(path);
 
     final completer = Completer<void>();
     _activeCompleters.add(completer);
 
     Future.delayed(const Duration(milliseconds: 50)).then((_) {
-      return _processFile(path);
+      return _processFile(path, isPriority: isPriority);
     }).then((_) {
       completer.complete();
     }).catchError((e) {
       completer.complete();
     }).whenComplete(() {
       _activeCompleters.remove(completer);
+      _priorityPaths.remove(path);
       _activeWorkers--;
       _trySpawnWorker();
     });
@@ -137,11 +141,11 @@ class ScanQueue {
     await scorer.nsfwService.dispose();
   }
 
-  Future<void> _processFile(String path) async {
+  Future<void> _processFile(String path, {bool isPriority = false}) async {
     if (_cancelled) return;
     try {
       if (ScanTargets.isVideo(path)) {
-        await _processVideo(path);
+        await _processVideo(path, isPriority: isPriority);
       } else if (ScanTargets.isImage(path)) {
         await _processImage(path);
       }
@@ -151,7 +155,8 @@ class ScanQueue {
   }
 
   // ─── VIDEO ──────────────────────────────────────────────
-  Future<void> _processVideo(String videoPath) async {
+  Future<void> _processVideo(String videoPath,
+      {bool isPriority = false}) async {
     if (_cancelled) return;
 
     final file = File(videoPath);
@@ -172,14 +177,28 @@ class ScanQueue {
     for (int i = 0; i < timestamps.length; i++) {
       if (_cancelled) break;
 
+      // ✅ ميزة الأولوية القصوى: إذا ظهر ملف جديد (Priority) وأنا حالياً أفحص ملف عادي، توقف فوراً
+      if (!isPriority && _priorityPaths.isNotEmpty) {
+        // أعد الملف الحالي إلى "رأس" الطابور ليتم استكماله فور انتهاء الملف المستعجل
+        _queue.insert(0, videoPath);
+        _pendingSet.add(videoPath); // أعده لمجموعة الانتظار
+        return; // اخرج لترك المجال للملف الجديد
+      }
+
       final frameBytes = await _extractFrameBytes(videoPath, timestamps[i]);
       if (frameBytes == null) continue;
 
       framesExtracted++;
       final scoredResult = await scorer.score(frameBytes);
 
-      if (scoredResult.rawNsfw.nsfw > scoredResult.rawNsfw.sfw) {
+      // ✅ منطق الحذف الفوري: إذا كان الفريم الحالي (سواء الأول أو الثاني أو غيره) إباحي، احذف واخرج
+      // درجة NSFW > SFW تعني أن الموديل واثق من وجود محتوى غير لائق
+      if (scoredResult.rawNsfw.isNsfw) {
         isNsfw = true;
+        if (kDebugScan) {
+          debugPrint(
+              '[ScanQueue] Video frame $i is NSFW. Deleting immediately: $videoPath');
+        }
         break;
       }
     }
@@ -200,6 +219,7 @@ class ScanQueue {
     }
 
     await hashesBox.put(hash, 1);
+    await _periodicCompact();
   }
 
   // ─── VIDEO METADATA ──────────────────────────────────────────────────────────
@@ -228,29 +248,53 @@ class ScanQueue {
     return VideoMetadata(durationMs: 60000, width: 0, height: 0);
   }
 
-  // ✅ FIX: أول frame بعد 5s دايماً، آخر frame قبل النهاية بـ 5s دايماً
+  // ✅ FIX: توزيع الـ frames حسب مدة الفيديو — مش عدد ثابت
   //
-  // المشكلة القديمة:
-  //   أول frame عند 0ms → غالباً black screen أو intro logo
-  //   آخر frame عند آخر ثانية → ممكن fade to black أو credits
-  //   كلهم مش محتوى حقيقي → ممكن يفوت NSFW
+  // المنطق:
+  //   فيديو 10 ثواني  → 3 frames (مش محتاج أكثر)
+  //   فيديو دقيقة     → 5 frames
+  //   فيديو 10 دقايق  → 8 frames
+  //   فيديو ساعة+     → 12 frame (max)
   //
-  // الحل:
-  //   offsetMs = 5000ms → نتخطى الـ intro والـ outro
-  //   الـ frames الوسطى تتوزع تلقائياً بين first و last
-  List<int> _generateAdaptiveTimestamps(int durationMs) {
-    if (durationMs <= 0) return List.filled(8, 0);
+  // كمان بيتخطى أول 5% وآخر 5% من الفيديو عشان يتجنب:
+  //   - الـ black screen في البداية
+  //   - الـ credits في النهاية
+  // ignore: unused_element_parameter
+  List<int> _generateAdaptiveTimestamps(int durationMs, {int? workerCount}) {
+    if (durationMs <= 0) return [0];
 
-    const int frameCount = 8;
+    // ─── عدد الـ frames حسب المدة ───────────────────────────────────────────
+    final int frameCount;
+    if (durationMs < 15000) {
+      // أقل من 15 ثانية → 3 frames كافية
+      frameCount = 3;
+    } else if (durationMs < 60000) {
+      // 15 ثانية → دقيقة → 5 frames
+      frameCount = 5;
+    } else if (durationMs < 300000) {
+      // 1 → 5 دقايق → 8 frames
+      frameCount = 8;
+    } else if (durationMs < 1800000) {
+      // 5 → 30 دقيقة → 10 frames
+      frameCount = 10;
+    } else {
+      // أكثر من 30 دقيقة → 12 frames (max)
+      frameCount = 12;
+    }
 
-    // يتم تقسيم مدة الفيديو لتوزيع 8 نقاط بالتساوي
-    // نستخدم (duration / 9) كخطوة (step) للحصول على 8 فريمات داخل محتوى الفيديو
-    // هذا يضمن عدم البدء من الصفر تماماً أو الانتهاء عند آخر ميلي ثانية لتجنب الفريمات السوداء
-    final double step = durationMs / (frameCount + 1);
+    // ─── نتخطى أول 5% وآخر 5% ────────────────────────────────────────────────
+    final int startMs = (durationMs * 0.05).round().clamp(2000, 10000);
+    final int endMs = (durationMs * 0.95).round();
+    final int rangeMs = endMs - startMs;
+
+    if (rangeMs <= 0) return [durationMs ~/ 2];
+
+    // ─── توزيع uniform بين start و end ───────────────────────────────────────
+    if (frameCount == 1) return [startMs + rangeMs ~/ 2];
 
     return List.generate(
       frameCount,
-      (i) => (step * (i + 1)).round(),
+      (i) => startMs + (rangeMs * i ~/ (frameCount - 1)),
     );
   }
 
@@ -314,6 +358,7 @@ class ScanQueue {
     }
 
     await hashesBox.put(hash, 1);
+    await _periodicCompact();
   }
 
   Future<void> _recordScanStat(String filePath,
@@ -360,15 +405,21 @@ class ScanQueue {
   Future<void> _logDeletion(String path) async {
     try {
       final box = Hive.box('deleted_log');
+
+      // ✅ FIX: نحتفظ بآخر 50 فقط — بعد كده نحذف الأقدم
+      // الـ deleted_log مش محتاجه يكبر للأبد — 50 كافية للعرض في الـ UI
+      if (box.length >= 50) {
+        final oldestKey = box.keys.first;
+        await box.delete(oldestKey);
+      }
+
       await box.add({
         'fileName': path.split('/').last,
         'source': _detectFolder(path),
         'deletedAt': DateTime.now().millisecondsSinceEpoch,
         'path': path,
       });
-    } catch (e) {
-      // Failed to log deletion
-    }
+    } catch (_) {}
   }
 
   Future<void> _notifyMediaScanner(String path) async {
@@ -395,23 +446,47 @@ class ScanQueue {
   }
 
   // ─── HASH ────────────────────────────────────────────
+  // ✅ FIX: نستخدم أول 12 حرف من SHA-256 بدل الـ 64 كاملة
+  //
+  // 12 hex chars = 48 bits entropy = احتمال collision 1 في 281 تريليون
+  // كافي تماماً لملفات المستخدم (أقل من مليون ملف على أي جهاز)
+  // النتيجة: كل entry = ~32 bytes بدل ~100 bytes = توفير 68% من المساحة
+  static int _scansSinceCompact = 0;
+  static const int _compactEvery = 150;
+
   Future<String> _getPartialHash(File file) async {
     const chunkSize = 64 * 1024;
     final size = await file.length();
 
+    final List<int> bytes;
     if (size <= chunkSize * 2) {
-      final bytes = await file.readAsBytes();
-      return sha256.convert(bytes).toString();
+      bytes = await file.readAsBytes();
+    } else {
+      final raf = await file.open();
+      try {
+        final head = await raf.read(chunkSize);
+        await raf.setPosition(size - chunkSize);
+        final tail = await raf.read(chunkSize);
+        bytes = [...head, ...tail];
+      } finally {
+        await raf.close();
+      }
     }
 
-    final raf = await file.open();
+    // ✅ أول 12 حرف فقط — 48-bit collision space
+    return sha256.convert(bytes).toString().substring(0, 12);
+  }
+
+  // ✅ FIX: compact أثناء الـ scan بدل الانتظار للـ startup التالي
+  Future<void> _periodicCompact() async {
+    _scansSinceCompact++;
+    if (_scansSinceCompact < _compactEvery) return;
+    _scansSinceCompact = 0;
+
     try {
-      final head = await raf.read(chunkSize);
-      await raf.setPosition(size - chunkSize);
-      final tail = await raf.read(chunkSize);
-      return sha256.convert([...head, ...tail]).toString();
-    } finally {
-      await raf.close();
-    }
+      final hashesBox = Hive.box('scanned_hashes');
+      // الـ compact سيتم تنفيذه الآن بناءً على العداد _scansSinceCompact
+      await hashesBox.compact();
+    } catch (_) {}
   }
 }

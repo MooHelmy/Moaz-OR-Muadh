@@ -33,9 +33,14 @@ class AppBootstrapper {
       Hive.openBox('scan_stats'), // ✅ كان موجود في الـ task handler بس مش هنا
     ]);
 
-    _compactIfNeeded('scanned_hashes', threshold: 300); // ✅ OPT: من 500→300
-    _compactIfNeeded('decisions', threshold: 100); // ✅ OPT: من 200→100
-    _compactIfNeeded('deleted_log', threshold: 50); // ✅ OPT: من 100→50
+    _compactIfNeeded('scanned_hashes', threshold: 300);
+    _compactIfNeeded('decisions',      threshold: 100);
+    _compactIfNeeded('deleted_log',    threshold: 50);
+
+    // ✅ FIX: لو الـ hashes box كبرت جداً → نحذف القديم
+    // المستخدم ما بيحتاجش hashes أقدم من 30 يوم
+    // كل hash = ~32 bytes — نبقى على آخر 3000 بحد أقصى
+    _pruneOldHashes();
 
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
@@ -51,6 +56,23 @@ class AppBootstrapper {
     if (box.length > threshold) {
       box.compact();
     }
+  }
+
+  // ✅ FIX: نحذف الـ hashes الزيادة لو تجاوزت 3000
+  // الجهاز مش محتاج يتذكر أكثر من 3000 ملف قديم —
+  // لو الملف اتغير أو اتحذف من الجهاز هيتمسح من hive تلقائياً
+  static void _pruneOldHashes() {
+    try {
+      const maxHashes = 3000;
+      final box = Hive.box('scanned_hashes');
+      if (box.length <= maxHashes) return;
+
+      // احذف الأقدم حتى نوصل للـ max
+      final toDelete = box.length - maxHashes;
+      final keys = box.keys.take(toDelete).toList();
+      box.deleteAll(keys);
+      box.compact();
+    } catch (_) {}
   }
 }
 

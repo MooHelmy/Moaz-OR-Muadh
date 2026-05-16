@@ -1,37 +1,20 @@
 // ══════════════════════════════════════════════════════════════════════════════
 //  device_capability_service.dart
 //  يحدد مستوى الـ concurrency المناسب للجهاز بناءً على:
-//    1. Hardware tier  (RAM + CPU cores + isLowRamDevice)
-//    2. Thermal state  (لو الجهاز سخن → نخفض)
-//    3. Battery saver  (لو موفر الطاقة شغال → نخفض)
+//    1. Hardware tier  (RAM + CPU cores + isLowRamDevice)  — native channel
+//    2. Thermal state  (من /sys/class/thermal)              — Dart file read
+//    3. Battery saver  (من native PowerManager)            — native channel
 // ══════════════════════════════════════════════════════════════════════════════
 
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-// ─── Concurrency Tier ─────────────────────────────────────────────────────────
-enum DeviceTier {
-  /// أجهزة ضعيفة — RAM < 2GB أو isLowRamDevice أو CPU ≤ 4
-  low,
+enum DeviceTier { low, mid, high }
 
-  /// أجهزة متوسطة — RAM 2-4GB و CPU 5-7
-  mid,
-
-  /// أجهزة قوية — RAM > 4GB و CPU ≥ 8
-  high,
-}
-
-// ─── Concurrency State ────────────────────────────────────────────────────────
-// الحالة النهائية بعد تطبيق كل العوامل
 class ConcurrencyState {
-  /// عدد الـ workers الحالي
   final int concurrency;
-
-  /// الـ tier بناءً على الـ hardware فقط
   final DeviceTier hardwareTier;
-
-  /// سبب التخفيض إن وُجد
   final String? throttleReason;
 
   const ConcurrencyState({
@@ -42,78 +25,67 @@ class ConcurrencyState {
 
   @override
   String toString() =>
-      'ConcurrencyState(workers=$concurrency, tier=$hardwareTier'
+      'ConcurrencyState(workers=$concurrency, tier=${hardwareTier.name}'
       '${throttleReason != null ? ", throttle=$throttleReason" : ""})';
 }
 
-// ─── Device Capability Service ────────────────────────────────────────────────
 class DeviceCapabilityService {
+  // ✅ channel واحد بيجيب كل الـ info من Android في call واحدة
   static const MethodChannel _channel = MethodChannel('medi_guard/device_info');
 
-  // Concurrency limits per tier (baseline — قبل thermal/battery adjustments)
   static const Map<DeviceTier, int> _baseConcurrency = {
     DeviceTier.low:  1,
     DeviceTier.mid:  2,
     DeviceTier.high: 3,
   };
 
-  // Hardware tier thresholds
-  static const int _lowRamThresholdMb  = 2048; // < 2GB → low
-  static const int _highRamThresholdMb = 4096; // > 4GB → high
-  static const int _lowCpuCores        = 4;    // ≤ 4 → low
-  static const int _highCpuCores       = 8;    // ≥ 8 → high
+  static const int _lowRamMb   = 2048;
+  static const int _highRamMb  = 4096;
+  static const int _lowCores   = 4;
+  static const int _highCores  = 8;
 
   DeviceTier? _cachedTier;
 
-  /// يجيب hardware tier من native (مرة واحدة — نتيجة cached)
   Future<DeviceTier> getHardwareTier() async {
     if (_cachedTier != null) return _cachedTier!;
-
     try {
       final caps = await _channel
           .invokeMapMethod<String, dynamic>('getDeviceCapabilities')
           .timeout(const Duration(seconds: 3));
 
-      if (caps == null) {
-        _cachedTier = DeviceTier.mid;
-        return _cachedTier!;
-      }
+      final cores        = (caps?['cpuCores']       as num?)?.toInt() ?? 4;
+      final ramMb        = (caps?['totalRamMb']      as num?)?.toInt() ?? 2048;
+      final isLowRam     = (caps?['isLowRamDevice']  as bool?) ?? false;
 
-      final cpuCores       = (caps['cpuCores']       as num?)?.toInt() ?? 4;
-      final totalRamMb     = (caps['totalRamMb']     as num?)?.toInt() ?? 2048;
-      final isLowRamDevice = (caps['isLowRamDevice'] as bool?) ?? false;
-
-      // isLowRamDevice من Android نفسه = أقوى مؤشر → low فوراً
-      if (isLowRamDevice || totalRamMb < _lowRamThresholdMb || cpuCores <= _lowCpuCores) {
+      if (isLowRam || ramMb < _lowRamMb || cores <= _lowCores) {
         _cachedTier = DeviceTier.low;
-      } else if (totalRamMb >= _highRamThresholdMb && cpuCores >= _highCpuCores) {
+      } else if (ramMb >= _highRamMb && cores >= _highCores) {
         _cachedTier = DeviceTier.high;
       } else {
         _cachedTier = DeviceTier.mid;
       }
     } catch (_) {
-      // fallback آمن
       _cachedTier = DeviceTier.mid;
     }
-
     return _cachedTier!;
   }
 
-  /// يحسب الـ concurrency النهائي بعد تطبيق thermal + battery adjustments
   Future<ConcurrencyState> computeConcurrency() async {
     final tier = await getHardwareTier();
     int workers = _baseConcurrency[tier]!;
     String? throttleReason;
 
     // ─── Battery Saver ────────────────────────────────────────────────────────
-    // Android: لو Power Saving mode شغال → نخفض بمقدار 1 (minimum 1)
+    // ✅ FIX: نستخدم native channel بدل قراءة /sys مباشرة
+    // /sys paths مختلفة على كل manufacturer — Samsung ≠ Xiaomi ≠ Pixel
+    // PowerManager.isPowerSaveMode() هو الـ API الرسمي المضمون
     if (await _isBatterySaverEnabled()) {
       workers = (workers - 1).clamp(1, workers);
       throttleReason = 'battery_saver';
     }
 
-    // ─── Thermal Throttle ─────────────────────────────────────────────────────
-    // Android API 29+: لو thermal status > LIGHT → نخفض لـ 1
+    // ─── Thermal ─────────────────────────────────────────────────────────────
+    // ✅ نقرأ أول thermal zone للـ CPU — أكثر موثوقية من فحص كل الـ zones
     if (await _isThermalThrottled()) {
       workers = 1;
       throttleReason = throttleReason != null
@@ -128,56 +100,37 @@ class DeviceCapabilityService {
     );
   }
 
-  /// هل Battery Saver (Power Save Mode) شغال؟
+  // ✅ FIX: battery saver عبر native channel — موثوق على كل الأجهزة
   Future<bool> _isBatterySaverEnabled() async {
     try {
-      // نقرأ من /sys/class/power_supply — متاح على معظم أجهزة Android
-      // بديل لـ PowerManager.isPowerSaveMode() اللي محتاجة context
-      final f = File('/sys/class/power_supply/battery/power_save_soc_thresh');
-      if (await f.exists()) {
-        // وجود الملف وقيمته > 0 = power save mode شغال
-        final val = int.tryParse((await f.readAsString()).trim()) ?? 0;
-        if (val > 0) return true;
-      }
-      // fallback: نقرأ من /sys/class/power_supply/battery/status
-      final statusFile = File('/sys/class/power_supply/battery/status');
-      if (await statusFile.exists()) {
-        // لو الجهاز بيشحن ما نخفضش
-        final status = (await statusFile.readAsString()).trim().toLowerCase();
-        if (status == 'charging' || status == 'full') return false;
-      }
-    } catch (_) {}
-    return false;
+      final caps = await _channel
+          .invokeMapMethod<String, dynamic>('getDeviceCapabilities')
+          .timeout(const Duration(seconds: 2));
+      return (caps?['isPowerSaveMode'] as bool?) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// هل الجهاز في حالة thermal throttling؟
-  /// يقرأ من /sys/class/thermal — متاح على Android بدون permissions
+  // ✅ نفحص cpu thermal zone فقط — أسرع وأدق من فحص كل الـ zones
   Future<bool> _isThermalThrottled() async {
     try {
-      // Android thermal zones — نبحث عن أي zone فوق 45°C
-      final thermalDir = Directory('/sys/class/thermal');
-      if (!await thermalDir.exists()) return false;
+      // نجرب المسارات الشائعة للـ CPU thermal zone
+      final candidates = [
+        '/sys/class/thermal/thermal_zone0/temp',
+        '/sys/class/thermal/thermal_zone1/temp',
+        '/sys/class/thermal/thermal_zone4/temp', // Snapdragon CPU zone
+      ];
 
-      final zones = await thermalDir
-          .list()
-          .where((e) => e.path.contains('thermal_zone'))
-          .cast<Directory>()
-          .take(8) // نفحص أول 8 zones فقط
-          .toList();
-
-      for (final zone in zones) {
-        try {
-          final tempFile = File('${zone.path}/temp');
-          if (!await tempFile.exists()) continue;
-
-          final raw = int.tryParse((await tempFile.readAsString()).trim()) ?? 0;
-          // Android يعبّر عن درجة الحرارة بـ millidegrees
-          // raw > 45000 = أكثر من 45°C
-          final celsius = raw > 1000 ? raw / 1000.0 : raw.toDouble();
-          if (celsius > 45.0) return true;
-        } catch (_) {
-          continue;
-        }
+      for (final path in candidates) {
+        final f = File(path);
+        if (!await f.exists()) continue;
+        final raw = int.tryParse((await f.readAsString()).trim()) ?? 0;
+        // Android: millidegrees → degrees, لو أقل من 1000 بالفعل بالـ degrees
+        final celsius = raw > 1000 ? raw / 1000.0 : raw.toDouble();
+        if (celsius > 47.0) return true;
+        // لو وجدنا zone واحد صالح نوقف — مش محتاج نفحص الباقي
+        if (celsius > 0) break;
       }
     } catch (_) {}
     return false;
