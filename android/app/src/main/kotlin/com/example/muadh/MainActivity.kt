@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
     private val ADMIN_CHANNEL       = "com.maadh.shield/admin"
     private val VIDEO_META_CHANNEL  = "medi_guard/video_metadata"
     private val DEVICE_INFO_CHANNEL = "medi_guard/device_info"
+    private val MEDIA_STORE_CHANNEL = "medi_guard/media_store"
 
     private var eventSink: EventChannel.EventSink? = null
     private val observers = mutableListOf<FileObserver>()
@@ -54,6 +55,78 @@ class MainActivity : FlutterActivity() {
         setupAdminChannel(flutterEngine)
         setupVideoMetadataChannel(flutterEngine)
         setupDeviceInfoChannel(flutterEngine)
+        setupMediaStoreChannel(flutterEngine)
+    }
+
+    // ─── MediaStore Channel ────────────────────────────────────────────────────
+    // يجيب الملفات الجديدة أو المعدّلة من Android MediaStore
+    // بدون FileObserver — Android يسجّل الملفات هنا بعد اكتمال الـ write
+    // مش محتاج permissions إضافية — READ_EXTERNAL_STORAGE كافية (موجودة)
+    private fun setupMediaStoreChannel(flutterEngine: FlutterEngine) {
+        val resolver = contentResolver
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            MEDIA_STORE_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getRecentMedia" -> {
+                    val sinceTimestamp = call.argument<Int>("sinceTimestamp") ?: 0
+                    val limit = call.argument<Int>("limit") ?: 20
+
+                    try {
+                        val paths = mutableListOf<String>()
+
+                        // نجيب من Images + Video في query واحدة عبر Files URI
+                        val uri = android.provider.MediaStore.Files.getContentUri("external")
+                        val projection = arrayOf(
+                            android.provider.MediaStore.Files.FileColumns.DATA,
+                            android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED,
+                            android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE,
+                        )
+
+                        // فقط صور وفيديوهات — مش كل الملفات
+                        val mediaTypeFilter = (
+                            "${android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE}" +
+                            " IN (${android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}," +
+                            "${android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
+                        )
+
+                        val selection = if (sinceTimestamp > 0) {
+                            "$mediaTypeFilter AND " +
+                            "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} > ?"
+                        } else {
+                            mediaTypeFilter
+                        }
+
+                        val selectionArgs = if (sinceTimestamp > 0) {
+                            arrayOf(sinceTimestamp.toString())
+                        } else {
+                            null
+                        }
+
+                        val sortOrder =
+                            "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} DESC LIMIT $limit"
+
+                        resolver.query(uri, projection, selection, selectionArgs, sortOrder)
+                            ?.use { cursor ->
+                                val dataCol = cursor.getColumnIndexOrThrow(
+                                    android.provider.MediaStore.Files.FileColumns.DATA
+                                )
+                                while (cursor.moveToNext()) {
+                                    val path = cursor.getString(dataCol) ?: continue
+                                    if (path.isNotEmpty()) paths.add(path)
+                                }
+                            }
+
+                        result.success(paths)
+                    } catch (e: Exception) {
+                        result.error("MEDIA_STORE_ERROR", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     // ─── Device Info Channel ───────────────────────────────────────────────────
@@ -94,14 +167,20 @@ class MainActivity : FlutterActivity() {
     }
 
     // ─── Video Metadata Channel ────────────────────────────────────────────────
-    // يستخدم MediaMetadataRetriever لاستخراج مدة الفيديو بدون decode أي frame
-    // أسرع بكثير من thumbnail probing — لا يوجد video decode أو JPEG encoding
+    // getVideoMetadata : يجيب duration/width/height بدون decode
+    // getFrameBytes    : يجيب frame كـ JPEG bytes بدون FileInputStream leak
+    //
+    // ✅ FIX: استبدال VideoThumbnail package بـ MediaMetadataRetriever مباشرة
+    // VideoThumbnail كان بيفتح FileInputStream ويسيبه للـ GC يقفله
+    // → بيسبب "A resource failed to call close / ENOENT" في الـ logcat
+    // MediaMetadataRetriever.release() في finally بيضمن إغلاق كل resources فوراً
     private fun setupVideoMetadataChannel(flutterEngine: FlutterEngine) {
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             VIDEO_META_CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+
                 "getVideoMetadata" -> {
                     val path = call.argument<String>("path")
                     if (path == null) {
@@ -128,9 +207,63 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         result.error("RETRIEVER_ERROR", e.message, null)
                     } finally {
+                        // ✅ release() مضمون دايماً — مفيش FileInputStream يتسرب للـ GC
                         retriever.release()
                     }
                 }
+
+                "getFrameBytes" -> {
+                    val path   = call.argument<String>("path")
+                    val timeMs = call.argument<Int>("timeMs") ?: 0
+                    val size   = call.argument<Int>("size")   ?: 384
+
+                    if (path == null) {
+                        result.error("NO_PATH", "path is null", null)
+                        return@setMethodCallHandler
+                    }
+
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(path)
+
+                        // OPTION_CLOSEST_SYNC = أسرع seek — يروح لأقرب keyframe
+                        // أسرع من OPTION_CLOSEST ومناسب للـ NSFW detection
+                        val bitmap = retriever.getFrameAtTime(
+                            timeMs * 1000L, // microseconds
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+
+                        if (bitmap == null) {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+
+                        // Scale لـ size×size في memory بدون disk
+                        val scaled = android.graphics.Bitmap.createScaledBitmap(
+                            bitmap, size, size, true
+                        )
+                        if (scaled !== bitmap) bitmap.recycle()
+
+                        // Compress لـ JPEG bytes في memory — مفيش disk write
+                        val stream = java.io.ByteArrayOutputStream()
+                        scaled.compress(
+                            android.graphics.Bitmap.CompressFormat.JPEG,
+                            80, // quality 80 — كافي للـ NSFW model
+                            stream
+                        )
+                        scaled.recycle()
+
+                        result.success(stream.toByteArray())
+
+                    } catch (e: Exception) {
+                        result.success(null) // frame فاشلة → skip بدل crash
+                    } finally {
+                        // ✅ release() مضمون — يغلق كل native resources فوراً
+                        // ده اللي كان ناقص في VideoThumbnail package
+                        retriever.release()
+                    }
+                }
+
                 else -> result.notImplemented()
             }
         }

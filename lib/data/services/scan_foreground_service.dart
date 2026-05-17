@@ -1,3 +1,15 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  scan_foreground_service.dart  —  v2.0
+//
+//  المعمارية الجديدة:
+//    FileObserver   → realtime priority → فوري
+//    MediaStore     → high priority    → كل 5 دقايق
+//    InitialSweep   → normal priority  → مرة واحدة عند الـ start
+//
+//  الـ 3 موديلات (NSFW + Skin + Face) بتشتغل على كل ملف
+//  بـ SmartScanQueue اللي بتوزع الشغل بشكل ذكي
+// ══════════════════════════════════════════════════════════════════════════════
+
 // ignore_for_file: unused_catch_stack
 
 import 'dart:io';
@@ -8,17 +20,18 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
 import 'package:medi_guard/data/services/face_service.dart';
 import 'package:medi_guard/data/services/file_observer_channel.dart';
+import 'package:medi_guard/data/services/media_store_poller.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/nsfw_service.dart';
 import 'package:medi_guard/data/services/skin_service.dart';
 import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
-import 'package:medi_guard/domain/scanning/scan_queue.dart';
+import 'package:medi_guard/domain/scanning/smart_scan_queue.dart';
 
-// ─────────────────────────────────────────────
-// ScanServiceManager
-// ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  ScanServiceManager
+// ══════════════════════════════════════════════════════════════════════════════
 class ScanServiceManager {
   static Future<void> initialize() async {
     FlutterForegroundTask.init(
@@ -35,7 +48,7 @@ class ScanServiceManager {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(60000),
+        eventAction: ForegroundTaskEventAction.repeat(60000), // كل دقيقة
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
         allowWakeLock: false,
@@ -56,11 +69,10 @@ class ScanServiceManager {
       );
     }
 
+    // FileObserver للكشف الفوري عن الملفات الجديدة
     try {
       await FileObserverChannel.startWatching(ScanTargets.folders);
-    } catch (e) {
-      // FileObserver failed
-    }
+    } catch (_) {}
   }
 
   static Future<void> stop() async {
@@ -68,34 +80,74 @@ class ScanServiceManager {
   }
 }
 
-// ─────────────────────────────────────────────
-// Entry point للـ background isolate
-// ─────────────────────────────────────────────
 @pragma('vm:entry-point')
 void startScanCallback() {
   FlutterForegroundTask.setTaskHandler(ScanTaskHandler());
 }
 
-// ─────────────────────────────────────────────
-// ScanTaskHandler
-// ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  ScanTaskHandler
+// ══════════════════════════════════════════════════════════════════════════════
 class ScanTaskHandler extends TaskHandler {
-  ScanQueue? _queue;
+  SmartScanQueue?  _queue;
+  MediaStorePoller? _poller;
   final Battery _battery = Battery();
-  bool _ready = false;
-  int _lastBatteryCheck = 0;
-  bool _isLowBattery = false;
-  int repeatCount = 0;
 
-  // ─── onStart ────────────────────────────────
+  bool _ready             = false;
+  bool _isLowBattery      = false;
+  bool _initialSweepDone  = false;
+  int  _lastBatteryCheckMs = 0;
+  int  _repeatCount       = 0;
+
+  // ─── onStart ─────────────────────────────────────────────────────────────
   @override
-  Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // ننتظر 8 ث عشان الجهاز يستقر بعد boot/restart
     await Future.delayed(const Duration(seconds: 8));
-    _initializeServices();
+    await _init();
   }
 
-  // ─── init ────────────────────────────────
-  Future<void> _initializeServices() async {
+  // ─── onReceiveData (FileObserver events) ─────────────────────────────────
+  @override
+  void onReceiveData(Object data) {
+    if (data is! String) return;
+    if (!_ready || _queue == null) return;
+
+    _checkBattery();
+    if (_isLowBattery) return;
+
+    if (ScanTargets.isMediaFile(data)) {
+      // ملف جديد من FileObserver → realtime → فحص فوري
+      _queue!.add(data, priority: ScanPriority.realtime);
+    }
+  }
+
+  // ─── onRepeatEvent (كل دقيقة) ────────────────────────────────────────────
+  @override
+  void onRepeatEvent(DateTime timestamp) {
+    _repeatCount++;
+    _checkBattery();
+
+    if (!_ready || _queue == null || _isLowBattery) return;
+
+    // كل 10 دقايق → poll MediaStore يدوي (backup للـ timer)
+    if (_repeatCount % 10 == 0) {
+      _poller?.pollNow();
+    }
+  }
+
+  // ─── onDestroy ────────────────────────────────────────────────────────────
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    _poller?.stop();
+    await _queue?.dispose();
+    _ready = false;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  INIT
+  // ══════════════════════════════════════════════════════════════════════════
+  Future<void> _init() async {
     try {
       await Hive.initFlutter();
       await Future.wait([
@@ -105,87 +157,46 @@ class ScanTaskHandler extends TaskHandler {
         Hive.openBox('deleted_log'),
       ]);
 
-      // ✅ FIX #1 & #2: NsfwService() بدون Singleton
-      //
-      // الكود القديم كان بيعمل:
-      //   final nsfwService = NsfwService(); // singleton
-      //
-      // المشكلة:
-      //   - الـ Dart isolates لا تشارك الـ heap
-      //   - الـ Singleton static field بيتعمل من جديد في كل isolate
-      //   - يعني مفيش فايدة من الـ Singleton هنا أصلاً
-      //   - لكنه كان بيسبب مشكلة: لو الـ isolate اتوقف وأُعيد تشغيله
-      //     → ScanQueue.dispose() استدعى nsfwService.dispose()
-      //     → _state = disposed على الـ static instance
-      //     → الـ isolate الجديد يلاقي service مقفولة → exception عند initialize()
-      //
-      // الحل:
-      //   NsfwService() عادي — كل isolate يعمل instance نظيفة خاصة به
-      final nsfwService = NsfwService();
-      await nsfwService.initialize();
+      final nsfw     = NsfwService();
+      await nsfw.initialize();
 
       final notifier = ScanNotificationService();
       await notifier.initialize();
 
-      _queue = ScanQueue(
+      _queue = SmartScanQueue(
         scorer: EnsembleScorer(
-          nsfwService: nsfwService,
+          nsfwService: nsfw,
           faceService: FaceService(),
           skinService: SkinService(),
         ),
-        engine: DecisionEngine(),
+        engine       : DecisionEngine(),
         deleteManager: DeleteManager(),
-        notifier: notifier,
+        notifier     : notifier,
+        maxWorkers   : 2,
       );
 
+      // ─── MediaStore Poller ─────────────────────────────────────────────
+      _poller = MediaStorePoller()..start(_queue!);
+
       _ready = true;
-      _sweepAllFolders();
-    } catch (e, stack) {
-      // _initializeServices error
+
+      // ─── Initial Sweep ─────────────────────────────────────────────────
+      // بعد 15 ث من الـ start — بأولوية normal
+      Future.delayed(const Duration(seconds: 15), _initialSweep);
+
+    } catch (e) {
+      // init failed — الـ service ستحاول تاني في أول event
     }
   }
 
-  // ─── onReceiveData ────────────────────────
-  @override
-  void onReceiveData(Object data) {
-    if (data is! String) return;
-    if (!_ready || _queue == null) return;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastBatteryCheck > 60000) {
-      _battery.batteryLevel.then((level) {
-        _isLowBattery = level < 20;
-        _lastBatteryCheck = now;
-      });
-      _battery.batteryState.then((state) {
-        final isCharging =
-            state == BatteryState.charging || state == BatteryState.full;
-        if (isCharging) {
-          _queue?.resumeHeavyTasks();
-        } else if (_isLowBattery) {
-          _queue?.pauseHeavyTasks();
-        }
-      });
-    }
-
-    if (_isLowBattery) return;
-
-    if (ScanTargets.isMediaFile(data)) {
-      _queue?.add(data, priority: true);
-    }
-  }
-
-  // ─── onRepeatEvent ────────────────────────
-  @override
-  void onRepeatEvent(DateTime timestamp) {
-    repeatCount++;
-  }
-
-  // ─── sweep ────────────────────────────────
-  Future<void> _sweepAllFolders() async {
-    if (_queue == null) return;
-
-    await Future.delayed(const Duration(seconds: 5));
+  // ══════════════════════════════════════════════════════════════════════════
+  //  INITIAL SWEEP — مرة واحدة عند الـ start
+  //  بيفحص كل الملفات بأولوية normal (أقل أولوية)
+  //  يتوقف لو Battery < 20%
+  // ══════════════════════════════════════════════════════════════════════════
+  Future<void> _initialSweep() async {
+    if (_initialSweepDone || _queue == null) return;
+    _initialSweepDone = true;
 
     final level = await _battery.batteryLevel;
     if (level < 20) return;
@@ -195,54 +206,36 @@ class ScanTaskHandler extends TaskHandler {
     for (final folder in ScanTargets.folders) {
       final dir = Directory(folder);
       if (!await dir.exists()) continue;
-
-      await for (final entity in dir.list(recursive: true)) {
-        if (entity is File && ScanTargets.isMediaFile(entity.path)) {
-          allFiles.add(entity);
+      await for (final e in dir.list(recursive: true)) {
+        if (e is File && ScanTargets.isMediaFile(e.path)) {
+          allFiles.add(e);
         }
       }
     }
 
     if (allFiles.isEmpty) return;
 
-    // ✅ FIX #3: إزالة statSync() من داخل sort
-    //
-    // الكود القديم:
-    //   allFiles.sort((a, b) {
-    //     final aStat = a.statSync(); // ← blocking I/O × عدد الملفات!
-    //     final bStat = b.statSync();
-    //     return bStat.modified.compareTo(aStat.modified);
-    //   });
-    //
-    // المشكلة:
-    //   - statSync() بيبلوك الـ isolate thread كاملاً لكل ملف
-    //   - مع 1000 ملف = 1000 blocking syscalls داخل الـ sort
-    //   - الـ sort نفسه O(n log n) يعني كل ملف بيتعمل stat أكتر من مرة
-    //   - النتيجة: الـ isolate بيتجمد ويوقف استقبال الملفات الجديدة
-    //
-    // الحل:
-    //   - اعمل stat لكل ملف مرة واحدة بـ Future.wait (async وmتوازي)
-    //   - ثم sort على النتائج بدون أي I/O
+    // Sort: الأحدث أولاً — لو المستخدم ضاف حاجة جديدة تتفحص الأول
     final withStats = await Future.wait(
       allFiles.map((f) async {
         try {
-          final stat = await f.stat();
-          return (file: f, modified: stat.modified);
+          final s = await f.stat();
+          return (file: f, modified: s.modified);
         } catch (_) {
-          // لو stat فشل → تعامل مع الملف كأقدم ملف (يتفحص أخيراً)
           return (file: f, modified: DateTime.fromMillisecondsSinceEpoch(0));
         }
       }),
     );
-
     withStats.sort((a, b) => b.modified.compareTo(a.modified));
 
+    // أضف بـ batches من 50 — pause 500ms بين كل batch
+    // عشان ما نسرقش الـ CPU من الـ realtime/high events
     const batchSize = 50;
     for (int i = 0; i < withStats.length; i += batchSize) {
+      if (_isLowBattery || _queue == null) break;
       final end = (i + batchSize).clamp(0, withStats.length);
-      final batch = withStats.sublist(i, end);
-      for (final item in batch) {
-        _queue!.add(item.file.path);
+      for (final item in withStats.sublist(i, end)) {
+        _queue!.add(item.file.path, priority: ScanPriority.normal);
       }
       if (end < withStats.length) {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -250,10 +243,25 @@ class ScanTaskHandler extends TaskHandler {
     }
   }
 
-  // ─── onDestroy ────────────────────────────
-  @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    await _queue?.dispose();
-    _ready = false;
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BATTERY CHECK
+  // ══════════════════════════════════════════════════════════════════════════
+  void _checkBattery() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastBatteryCheckMs < 60000) return; // مرة كل دقيقة بس
+    _lastBatteryCheckMs = now;
+
+    _battery.batteryLevel.then((level) {
+      _isLowBattery = level < 20;
+      if (_isLowBattery) _queue?.pause();
+    });
+
+    _battery.batteryState.then((state) {
+      final charging = state == BatteryState.charging || state == BatteryState.full;
+      if (charging) {
+        _isLowBattery = false;
+        _queue?.resume();
+      }
+    });
   }
 }

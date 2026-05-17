@@ -147,7 +147,7 @@ class ScanQueue {
       if (ScanTargets.isVideo(path)) {
         await _processVideo(path, isPriority: isPriority);
       } else if (ScanTargets.isImage(path)) {
-        await _processImage(path);
+        await _processImage(path, isPriority: isPriority);
       }
     } catch (e) {
       // ScanQueue Error
@@ -170,6 +170,21 @@ class ScanQueue {
     final metadata = await _getVideoMetadata(videoPath);
     final timestamps = _generateAdaptiveTimestamps(metadata.durationMs);
 
+    if (kDebugScan) {
+      final totalFrames = timestamps.length;
+      final videoName = videoPath.split('/').last;
+      debugPrint(
+          '[ScanQueue] ▶️ بدء فحص: $videoName | إجمالي الفريمات: $totalFrames');
+      for (int idx = 0; idx < timestamps.length; idx++) {
+        final ms = timestamps[idx];
+        final m = ms ~/ 60000;
+        final s = (ms % 60000) ~/ 1000;
+        debugPrint(
+          '[ScanQueue]   📌 فريم ${idx + 1}/$totalFrames → ${m}:${s.toString().padLeft(2, '0')} (${ms ~/ 1000}ث)',
+        );
+      }
+    }
+
     // ✅ FIX: لا temp files — كل frame تُعالَج من memory مباشرة
     bool isNsfw = false;
     int framesExtracted = 0;
@@ -179,28 +194,61 @@ class ScanQueue {
 
       // ✅ ميزة الأولوية القصوى: إذا ظهر ملف جديد (Priority) وأنا حالياً أفحص ملف عادي، توقف فوراً
       if (!isPriority && _priorityPaths.isNotEmpty) {
-        // أعد الملف الحالي إلى "رأس" الطابور ليتم استكماله فور انتهاء الملف المستعجل
-        _queue.insert(0, videoPath);
+        // أعد الملف بعد كل الـ priority items في القائمة مباشرة
+        // بحيث يُستكمل فحصه فوراً بعد انتهاء الملفات المستعجلة
+        final insertPos = _queue.indexWhere((p) => !_priorityPaths.contains(p));
+        if (insertPos == -1) {
+          _queue.add(videoPath); // كل القائمة priority → ضيفه في الآخر
+        } else {
+          _queue.insert(insertPos, videoPath);
+        }
         _pendingSet.add(videoPath); // أعده لمجموعة الانتظار
+        // لا نسجل stat هنا — الملف لم يكتمل فحصه بعد
         return; // اخرج لترك المجال للملف الجديد
       }
 
+      if (kDebugScan) {
+        final ms = timestamps[i];
+        final m = ms ~/ 60000;
+        final s = (ms % 60000) ~/ 1000;
+        debugPrint(
+          '[ScanQueue] 🔍 جاري فحص فريم ${i + 1}/${timestamps.length} | الوقت: ${m}:${s.toString().padLeft(2, '0')} | ${videoPath.split('/').last}',
+        );
+      }
+
       final frameBytes = await _extractFrameBytes(videoPath, timestamps[i]);
-      if (frameBytes == null) continue;
+      if (frameBytes == null) {
+        if (kDebugScan)
+          debugPrint('[ScanQueue] ⚠️ فريم ${i + 1} فشل في الاستخراج — تخطي');
+        continue;
+      }
 
       framesExtracted++;
       final scoredResult = await scorer.score(frameBytes);
+
+      if (kDebugScan) {
+        final ms = timestamps[i];
+        final m = ms ~/ 60000;
+        final s = (ms % 60000) ~/ 1000;
+        final result = scoredResult.rawNsfw.isNsfw ? '❌ NSFW' : '✅ SFW';
+        debugPrint(
+          '[ScanQueue] $result فريم ${i + 1} | الوقت: ${m}:${s.toString().padLeft(2, '0')} | Score: ${scoredResult.rawNsfw.nsfw.toStringAsFixed(3)} | ${videoPath.split('/').last}',
+        );
+      }
 
       // ✅ منطق الحذف الفوري: إذا كان الفريم الحالي (سواء الأول أو الثاني أو غيره) إباحي، احذف واخرج
       // درجة NSFW > SFW تعني أن الموديل واثق من وجود محتوى غير لائق
       if (scoredResult.rawNsfw.isNsfw) {
         isNsfw = true;
-        if (kDebugScan) {
-          debugPrint(
-              '[ScanQueue] Video frame $i is NSFW. Deleting immediately: $videoPath');
-        }
         break;
       }
+    }
+
+    if (kDebugScan) {
+      final videoName = videoPath.split('/').last;
+      final verdict = isNsfw ? '🚫 محتوى غير لائق — سيتم الحذف' : '✅ آمن';
+      debugPrint(
+          '[ScanQueue] 🏁 انتهى فحص: $videoName | النتيجة: $verdict | فريمات فُحصت: $framesExtracted/${timestamps.length}');
     }
 
     // ✅ FIX #6: سجّل stats حتى لو ما استخرجناش أي frame
@@ -223,79 +271,153 @@ class ScanQueue {
   }
 
   // ─── VIDEO METADATA ──────────────────────────────────────────────────────────
-  // ✅ FIX: استبدال thumbnail probing بـ MediaMetadataRetriever
   //
-  // الكود القديم كان يعمل حتى 6 probes، كل probe = video decode + JPEG encode
-  // الكود الجديد: native metadata فقط — لا يوجد frame decode على الإطلاق
-  // النتيجة: من ~1–5 ثوانٍ إلى <50ms على أي جهاز
-  static const MethodChannel _videoMetaChannel =
-      MethodChannel('medi_guard/video_metadata');
-
+  // المشكلة: الـ MethodChannel (medi_guard/video_metadata) مسجّل في MainActivity
+  // فقط على الـ main FlutterEngine، لكن _processVideo يتشغل في background isolate
+  // (FlutterForegroundTask) اللي عنده binary messenger مختلف تماماً.
+  // النتيجة: الـ call بيتجاهل → timeout → fallback 60 ثانية → frames غلطانة.
+  //
+  // الحل: binary search بـ VideoThumbnail نفسه اللي شغال في الـ isolate أصلاً.
+  // المنطق: لو thumbnailData نجح عند timestamp معين → الفيديو وصل لهنا على الأقل.
+  //         لو فشل (null) → الفيديو خلص قبله.
+  // الدقة: ±5% من المدة الحقيقية — كافية لتوزيع الـ frames صح.
+  // التكلفة: 4-5 thumbnail probes = ~200-500ms بدل timeout 5 ثواني.
   Future<VideoMetadata> _getVideoMetadata(String videoPath) async {
-    try {
-      final result = await _videoMetaChannel.invokeMapMethod<String, dynamic>(
-          'getVideoMetadata',
-          {'path': videoPath}).timeout(const Duration(seconds: 5));
+    // نبدأ بـ upper bound تدريجي: 2د → 5د → 15د → 30د → 60د → 120د → 180د
+    const List<int> candidates = [
+      2 * 60 * 1000,
+      5 * 60 * 1000,
+      15 * 60 * 1000,
+      30 * 60 * 1000,
+      60 * 60 * 1000,
+      120 * 60 * 1000,
+      180 * 60 * 1000,
+    ];
 
-      if (result != null) {
-        return VideoMetadata(
-          durationMs: (result['durationMs'] as num?)?.toInt() ?? 60000,
-          width: (result['width'] as num?)?.toInt() ?? 0,
-          height: (result['height'] as num?)?.toInt() ?? 0,
-        );
+    // الخطوة 1: ابحث عن أول candidate يفشل — ده upper bound للمدة
+    int lowerMs = 0;
+    int upperMs = candidates.last;
+
+    for (final ms in candidates) {
+      final probe = await _probeTimestamp(videoPath, ms);
+      if (!probe) {
+        upperMs = ms;
+        break;
       }
-    } catch (_) {}
-    return VideoMetadata(durationMs: 60000, width: 0, height: 0);
-  }
-
-  // ✅ FIX: توزيع الـ frames حسب مدة الفيديو — مش عدد ثابت
-  //
-  // المنطق:
-  //   فيديو 10 ثواني  → 3 frames (مش محتاج أكثر)
-  //   فيديو دقيقة     → 5 frames
-  //   فيديو 10 دقايق  → 8 frames
-  //   فيديو ساعة+     → 12 frame (max)
-  //
-  // كمان بيتخطى أول 5% وآخر 5% من الفيديو عشان يتجنب:
-  //   - الـ black screen في البداية
-  //   - الـ credits في النهاية
-  // ignore: unused_element_parameter
-  List<int> _generateAdaptiveTimestamps(int durationMs, {int? workerCount}) {
-    if (durationMs <= 0) return [0];
-
-    // ─── عدد الـ frames حسب المدة ───────────────────────────────────────────
-    final int frameCount;
-    if (durationMs < 15000) {
-      // أقل من 15 ثانية → 3 frames كافية
-      frameCount = 3;
-    } else if (durationMs < 60000) {
-      // 15 ثانية → دقيقة → 5 frames
-      frameCount = 5;
-    } else if (durationMs < 300000) {
-      // 1 → 5 دقايق → 8 frames
-      frameCount = 8;
-    } else if (durationMs < 1800000) {
-      // 5 → 30 دقيقة → 10 frames
-      frameCount = 10;
-    } else {
-      // أكثر من 30 دقيقة → 12 frames (max)
-      frameCount = 12;
+      lowerMs = ms;
     }
 
-    // ─── نتخطى أول 5% وآخر 5% ────────────────────────────────────────────────
-    final int startMs = (durationMs * 0.05).round().clamp(2000, 10000);
-    final int endMs = (durationMs * 0.95).round();
-    final int rangeMs = endMs - startMs;
+    // لو حتى أول candidate فشل، الفيديو أقل من دقيقتين — استخدم 60 ث كافتراض
+    if (lowerMs == 0 && upperMs == candidates.first) {
+      return VideoMetadata(durationMs: 60000, width: 0, height: 0);
+    }
 
-    if (rangeMs <= 0) return [durationMs ~/ 2];
+    // الخطوة 2: binary search بين lowerMs و upperMs بدقة ±5%
+    for (int step = 0; step < 4; step++) {
+      final midMs = (lowerMs + upperMs) ~/ 2;
+      if (midMs <= lowerMs) break;
+      final probe = await _probeTimestamp(videoPath, midMs);
+      if (probe) {
+        lowerMs = midMs;
+      } else {
+        upperMs = midMs;
+      }
+    }
 
-    // ─── توزيع uniform بين start و end ───────────────────────────────────────
-    if (frameCount == 1) return [startMs + rangeMs ~/ 2];
+    // lowerMs = آخر timestamp نجح فيه → تقريب للمدة الحقيقية
+    // نضيف 10% هامش أمان لنضمن إن lastMs صح
+    final estimatedMs = (lowerMs * 1.10).round();
 
-    return List.generate(
-      frameCount,
-      (i) => startMs + (rangeMs * i ~/ (frameCount - 1)),
+    if (kDebugScan) {
+      final m = estimatedMs ~/ 60000;
+      final s = (estimatedMs % 60000) ~/ 1000;
+      debugPrint(
+          '[ScanQueue] 📏 Duration estimated: $m:${s.toString().padLeft(2, '0')} ($estimatedMs ms) for ${videoPath.split('/').last}');
+    }
+
+    return VideoMetadata(durationMs: estimatedMs, width: 0, height: 0);
+  }
+
+  // probe: هل الفيديو وصل لهذا الـ timestamp؟
+  // نجاح = thumbnailData رجعت bytes غير null
+  Future<bool> _probeTimestamp(String videoPath, int timeMs) async {
+    try {
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: videoPath,
+        imageFormat: ImageFormat.JPEG,
+        timeMs: timeMs,
+        maxWidth: 64, // صغير جداً — بس عايزين نعرف هل نجح أو لا
+        maxHeight: 64,
+        quality: 10,
+      ).timeout(const Duration(seconds: 4));
+      return bytes != null && bytes.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ─── توزيع الـ frames بمنطق ذكي ─────────────────────────────────────────────
+  //
+  //  توزيع على منطقتين:
+  //    • النصف الأول (first → 50%): ثلث الـ frames الوسطى
+  //    • النصف الثاني (50% → last): ثلثين الـ frames الوسطى
+  //
+  //  السبب: NSFW content ممكن يكون في أي مكان في الفيديو، مش بس في الآخر.
+  //  التوزيع على كل الفيديو مع تركيز في النص والنهاية يضمن ما نفوتش حاجة.
+  //
+  //  عدد الـ frames الإجمالي:
+  //    < 30 ث   → 1  (المنتصف فقط)
+  //    30ث–1د   → 3  (أولى + وسط + أخيرة)
+  //    1–5 د    → 5  (أولى + 3 وسطى + أخيرة)
+  //    5–30 د   → 7  (أولى + 5 وسطى + أخيرة)
+  //    30+ د    → 9  (أولى + 7 وسطى + أخيرة)
+  List<int> _generateAdaptiveTimestamps(int durationMs) {
+    if (durationMs <= 0) return [0];
+
+    // فيديو قصير جداً → خد من المنتصف بس
+    if (durationMs < 30000) return [durationMs ~/ 2];
+
+    // Frame أولى دايماً عند 8 ث
+    const int firstMs = 8000;
+
+    // Frame أخيرة دايماً قبل النهاية بـ 15 ث
+    final int lastMs =
+        (durationMs - 15000).clamp(firstMs + 1000, durationMs - 1000);
+
+    if (lastMs <= firstMs) return [durationMs ~/ 2];
+
+    // ─── عدد الـ frames الوسطى ────────────────────────────────────────────
+    final int middleCount;
+    if (durationMs < 60000) {
+      middleCount = 1; // < دقيقة  → 3 إجمالي
+    } else if (durationMs < 300000) {
+      middleCount = 3; // 1-5 د    → 5 إجمالي
+    } else if (durationMs < 1800000) {
+      middleCount = 5; // 5-30 د   → 7 إجمالي
+    } else {
+      middleCount = 7; // 30+ د    → 9 إجمالي
+    }
+
+    if (middleCount == 0) return [firstMs, lastMs];
+
+    // ─── توزيع على النصف الأول والنصف الثاني ────────────────────────────
+    final int midMs = ((firstMs + lastMs) / 2).round();
+
+    // ثلث الـ frames في النصف الأول، ثلثين في النصف الثاني
+    final int firstHalfCount = (middleCount / 3).round();
+    final int secondHalfCount = middleCount - firstHalfCount;
+
+    final List<int> firstHalf = List.generate(
+      firstHalfCount,
+      (i) => firstMs + ((midMs - firstMs) * (i + 1) ~/ (firstHalfCount + 1)),
     );
+
+    final List<int> secondHalf = List.generate(
+      secondHalfCount,
+      (i) => midMs + ((lastMs - midMs) * (i + 1) ~/ (secondHalfCount + 1)),
+    );
+
+    return [firstMs, ...firstHalf, ...secondHalf, lastMs];
   }
 
   // ✅ FIX: thumbnailData() بدل thumbnailFile() — zero disk IO
@@ -321,8 +443,20 @@ class ScanQueue {
   }
 
   // ─── IMAGE ────────────────────────────────────────────
-  Future<void> _processImage(String path) async {
+  Future<void> _processImage(String path, {bool isPriority = false}) async {
     if (_cancelled) return;
+
+    // ✅ yield للأولوية: إذا ظهر ملف جديد (Priority) وأنا حالياً أفحص صورة عادية، أعدها وتوقف
+    if (!isPriority && _priorityPaths.isNotEmpty) {
+      final insertPos = _queue.indexWhere((p) => !_priorityPaths.contains(p));
+      if (insertPos == -1) {
+        _queue.add(path);
+      } else {
+        _queue.insert(insertPos, path);
+      }
+      _pendingSet.add(path);
+      return;
+    }
 
     final file = File(path);
     if (!await file.exists()) return;
