@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -9,7 +10,6 @@ import 'package:medi_guard/core/theme/theme_provider.dart';
 import 'package:medi_guard/data/services/file_observer_channel.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
-import 'package:medi_guard/data/services/work_manager_service.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
 import 'package:medi_guard/feature/splash/presentation/view/splash_view.dart';
 
@@ -34,8 +34,8 @@ class AppBootstrapper {
     ]);
 
     _compactIfNeeded('scanned_hashes', threshold: 300);
-    _compactIfNeeded('decisions',      threshold: 100);
-    _compactIfNeeded('deleted_log',    threshold: 50);
+    _compactIfNeeded('decisions', threshold: 100);
+    _compactIfNeeded('deleted_log', threshold: 50);
 
     // ✅ FIX: لو الـ hashes box كبرت جداً → نحذف القديم
     // المستخدم ما بيحتاجش hashes أقدم من 30 يوم
@@ -45,10 +45,19 @@ class AppBootstrapper {
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
 
-    await WorkManagerService.initialize();
-    await WorkManagerService.schedulePeriodicScan();
-
     await ScanServiceManager.initialize();
+
+    // ─── Accessibility → Background Task bridge ────────────────────────────
+    // MaadhAccessibilityService بيبعت الـ path لـ MainActivity عبر broadcast
+    // MainActivity بيبعته هنا عبر EventChannel (main engine = main isolate = شغّال)
+    // إحنا بنبعته للـ background task عبر FlutterForegroundTask.sendDataToTask
+    const EventChannel('medi_guard/scan_file')
+        .receiveBroadcastStream()
+        .listen((dynamic data) {
+      if (data is String && data.isNotEmpty) {
+        FlutterForegroundTask.sendDataToTask(data);
+      }
+    });
   }
 
   static void _compactIfNeeded(String boxName, {required int threshold}) {

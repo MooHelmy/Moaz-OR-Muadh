@@ -1,26 +1,21 @@
 // ══════════════════════════════════════════════════════════════════════════════
-//  scan_foreground_service.dart  —  v2.0
+//  scan_foreground_service.dart
 //
-//  المعمارية الجديدة:
-//    FileObserver   → realtime priority → فوري
-//    MediaStore     → high priority    → كل 5 دقايق
-//    InitialSweep   → normal priority  → مرة واحدة عند الـ start
+//  المعمارية:
+//    FileObserver   → realtime priority → فوري (ملف جديد أو اتنقل)
+//    MediaStore     → high priority    → كل 5 دقايق عبر onRepeatEvent
 //
-//  الـ 3 موديلات (NSFW + Skin + Face) بتشتغل على كل ملف
-//  بـ SmartScanQueue اللي بتوزع الشغل بشكل ذكي
+//  مفيش Initial Sweep — بنفحص الجديد بس
+//  مفيش WorkManager — مش محتاجينه
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ignore_for_file: unused_catch_stack
-
-import 'dart:io';
-
 import 'package:battery_plus/battery_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:medi_guard/core/constants/scan_targets.dart';
 import 'package:medi_guard/data/services/face_service.dart';
 import 'package:medi_guard/data/services/file_observer_channel.dart';
-import 'package:medi_guard/data/services/media_store_poller.dart';
 import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/nsfw_service.dart';
 import 'package:medi_guard/data/services/skin_service.dart';
@@ -28,6 +23,9 @@ import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:medi_guard/domain/scanning/smart_scan_queue.dart';
+
+// ── MediaStore channel — يُستخدم من onRepeatEvent (main isolate) فقط ─────────
+const _mediaStoreChannel = MethodChannel('medi_guard/media_store');
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  ScanServiceManager
@@ -48,7 +46,8 @@ class ScanServiceManager {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(60000), // كل دقيقة
+        // كل دقيقة — للـ battery check والـ MediaStore poll
+        eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
         allowWakeLock: false,
@@ -69,7 +68,6 @@ class ScanServiceManager {
       );
     }
 
-    // FileObserver للكشف الفوري عن الملفات الجديدة
     try {
       await FileObserverChannel.startWatching(ScanTargets.folders);
     } catch (_) {}
@@ -89,40 +87,50 @@ void startScanCallback() {
 //  ScanTaskHandler
 // ══════════════════════════════════════════════════════════════════════════════
 class ScanTaskHandler extends TaskHandler {
-  SmartScanQueue?  _queue;
-  MediaStorePoller? _poller;
+  SmartScanQueue? _queue;
   final Battery _battery = Battery();
 
-  bool _ready             = false;
-  bool _isLowBattery      = false;
-  bool _initialSweepDone  = false;
-  int  _lastBatteryCheckMs = 0;
-  int  _repeatCount       = 0;
+  bool _ready = false;
+  bool _isLowBattery = false;
+  int _lastBatteryCheckMs = 0;
+  int _repeatCount = 0;
+
+  // آخر timestamp عملنا فيه MediaStore poll (unix seconds)
+  int _lastMediaPollTs = 0;
 
   // ─── onStart ─────────────────────────────────────────────────────────────
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    // ننتظر 8 ث عشان الجهاز يستقر بعد boot/restart
     await Future.delayed(const Duration(seconds: 8));
     await _init();
   }
 
-  // ─── onReceiveData (FileObserver events) ─────────────────────────────────
+  // ─── onReceiveData — FileObserver events ─────────────────────────────────
+  // كل message من FileObserver أو MediaStore بتيجي هنا
   @override
   void onReceiveData(Object data) {
     if (data is! String) return;
     if (!_ready || _queue == null) return;
-
-    _checkBattery();
     if (_isLowBattery) return;
 
+    // فورمات الـ MediaStore batch: "MEDIA_BATCH:path1|path2|path3"
+    if (data.startsWith('MEDIA_BATCH:')) {
+      final paths = data.substring(12).split('|').where((p) => p.isNotEmpty);
+      for (final path in paths) {
+        if (ScanTargets.isMediaFile(path)) {
+          _queue!.add(path, priority: ScanPriority.high);
+        }
+      }
+      return;
+    }
+
+    // FileObserver event: path مباشر
     if (ScanTargets.isMediaFile(data)) {
-      // ملف جديد من FileObserver → realtime → فحص فوري
       _queue!.add(data, priority: ScanPriority.realtime);
     }
   }
 
-  // ─── onRepeatEvent (كل دقيقة) ────────────────────────────────────────────
+  // ─── onRepeatEvent — كل دقيقة ────────────────────────────────────────────
   @override
   void onRepeatEvent(DateTime timestamp) {
     _repeatCount++;
@@ -130,16 +138,16 @@ class ScanTaskHandler extends TaskHandler {
 
     if (!_ready || _queue == null || _isLowBattery) return;
 
-    // كل 10 دقايق → poll MediaStore يدوي (backup للـ timer)
-    if (_repeatCount % 10 == 0) {
-      _poller?.pollNow();
+    // كل 5 دقايق → MediaStore poll
+    // onRepeatEvent بيشتغل على main isolate → الـ channel شغّال
+    if (_repeatCount % 5 == 0) {
+      _pollMediaStore();
     }
   }
 
   // ─── onDestroy ────────────────────────────────────────────────────────────
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    _poller?.stop();
     await _queue?.dispose();
     _ready = false;
   }
@@ -157,7 +165,7 @@ class ScanTaskHandler extends TaskHandler {
         Hive.openBox('deleted_log'),
       ]);
 
-      final nsfw     = NsfwService();
+      final nsfw = NsfwService();
       await nsfw.initialize();
 
       final notifier = ScanNotificationService();
@@ -169,95 +177,69 @@ class ScanTaskHandler extends TaskHandler {
           faceService: FaceService(),
           skinService: SkinService(),
         ),
-        engine       : DecisionEngine(),
+        engine: DecisionEngine(),
         deleteManager: DeleteManager(),
-        notifier     : notifier,
-        maxWorkers   : 2,
+        notifier: notifier,
+        maxWorkers: 2,
       );
 
-      // ─── MediaStore Poller ─────────────────────────────────────────────
-      _poller = MediaStorePoller()..start(_queue!);
+      // آخر poll = دلوقتي − 6 دقايق عشان أول poll يحصل بعد دقيقة من الـ start
+      _lastMediaPollTs = DateTime.now()
+              .subtract(const Duration(minutes: 6))
+              .millisecondsSinceEpoch ~/
+          1000;
 
       _ready = true;
-
-      // ─── Initial Sweep ─────────────────────────────────────────────────
-      // بعد 15 ث من الـ start — بأولوية normal
-      Future.delayed(const Duration(seconds: 15), _initialSweep);
-
-    } catch (e) {
-      // init failed — الـ service ستحاول تاني في أول event
-    }
+    } catch (_) {}
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  INITIAL SWEEP — مرة واحدة عند الـ start
-  //  بيفحص كل الملفات بأولوية normal (أقل أولوية)
-  //  يتوقف لو Battery < 20%
+  //  MEDIA STORE POLL
+  //  بيشتغل من onRepeatEvent (main isolate) → الـ channel شغّال هنا
+  //  بيبعت النتايج للـ background task عبر sendDataToTask
   // ══════════════════════════════════════════════════════════════════════════
-  Future<void> _initialSweep() async {
-    if (_initialSweepDone || _queue == null) return;
-    _initialSweepDone = true;
+  Future<void> _pollMediaStore() async {
+    try {
+      final result = await _mediaStoreChannel.invokeMethod<List<dynamic>>(
+        'getRecentMedia',
+        {
+          'sinceTimestamp': _lastMediaPollTs,
+          'limit': 30,
+        },
+      );
 
-    final level = await _battery.batteryLevel;
-    if (level < 20) return;
+      _lastMediaPollTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    final allFiles = <File>[];
+      if (result == null || result.isEmpty) return;
 
-    for (final folder in ScanTargets.folders) {
-      final dir = Directory(folder);
-      if (!await dir.exists()) continue;
-      await for (final e in dir.list(recursive: true)) {
-        if (e is File && ScanTargets.isMediaFile(e.path)) {
-          allFiles.add(e);
-        }
-      }
-    }
+      final paths =
+          result.whereType<String>().where(ScanTargets.isMediaFile).toList();
 
-    if (allFiles.isEmpty) return;
+      if (paths.isEmpty) return;
 
-    // Sort: الأحدث أولاً — لو المستخدم ضاف حاجة جديدة تتفحص الأول
-    final withStats = await Future.wait(
-      allFiles.map((f) async {
-        try {
-          final s = await f.stat();
-          return (file: f, modified: s.modified);
-        } catch (_) {
-          return (file: f, modified: DateTime.fromMillisecondsSinceEpoch(0));
-        }
-      }),
-    );
-    withStats.sort((a, b) => b.modified.compareTo(a.modified));
-
-    // أضف بـ batches من 50 — pause 500ms بين كل batch
-    // عشان ما نسرقش الـ CPU من الـ realtime/high events
-    const batchSize = 50;
-    for (int i = 0; i < withStats.length; i += batchSize) {
-      if (_isLowBattery || _queue == null) break;
-      final end = (i + batchSize).clamp(0, withStats.length);
-      for (final item in withStats.sublist(i, end)) {
-        _queue!.add(item.file.path, priority: ScanPriority.normal);
-      }
-      if (end < withStats.length) {
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-    }
+      // بعت الـ paths للـ background task عبر sendDataToTask
+      // onReceiveData هيستقبلهم ويضيفهم بـ high priority
+      final batch = 'MEDIA_BATCH:${paths.join('|')}';
+      FlutterForegroundTask.sendDataToTask(batch);
+    } catch (_) {}
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  BATTERY CHECK
+  //  BATTERY CHECK — مرة كل دقيقة بس
   // ══════════════════════════════════════════════════════════════════════════
   void _checkBattery() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastBatteryCheckMs < 60000) return; // مرة كل دقيقة بس
+    if (now - _lastBatteryCheckMs < 60000) return;
     _lastBatteryCheckMs = now;
 
     _battery.batteryLevel.then((level) {
-      _isLowBattery = level < 20;
+      _isLowBattery = level < 10;
       if (_isLowBattery) _queue?.pause();
     });
 
     _battery.batteryState.then((state) {
-      final charging = state == BatteryState.charging || state == BatteryState.full;
+      final charging =
+          state == BatteryState.charging || state == BatteryState.full;
       if (charging) {
         _isLowBattery = false;
         _queue?.resume();

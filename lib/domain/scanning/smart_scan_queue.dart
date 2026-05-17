@@ -1,19 +1,25 @@
 // ══════════════════════════════════════════════════════════════════════════════
-//  smart_scan_queue.dart  —  v1.0
+//  smart_scan_queue.dart
 //
 //  Priority-aware scan queue بـ 3 مستويات:
-//    🔴 realtime  → FileObserver (ملف جديد دلوقتي)       → فوري
-//    🟡 high      → MediaStore recent (اتفتح مؤخراً)     → قريب
-//    🟢 normal    → Background sweep                      → لما يفضى
+//    🔴 realtime → FileObserver (ملف جديد دلوقتي)    → فوري + worker إضافي
+//    🟡 high     → MediaStore poll (كل 5 دقايق)      → الأولوية التانية
+//    🟢 normal   → Initial sweep                      → لما يفضى
 //
-//  الـ 3 موديلات بتشتغل مع بعض على كل ملف:
+//  الـ 3 موديلات على كل ملف:
 //    NSFW (0.75) + Skin (0.15) + Face (0.10) = weighted score
 //    Early exit لو NSFW > 0.85 — مش محتاجين Skin/Face
+//
+//  مشكلة الـ MethodChannel في background isolate:
+//    الـ native channels (video_metadata, getFrameBytes) مسجّلة على
+//    الـ main FlutterEngine بس — الـ background isolate عنده messenger تاني.
+//    الحل: VideoThumbnail.thumbnailData() شغّال في الـ isolate أصلاً.
+//      - Duration: binary search بـ probe thumbnails صغيرة (64×64)
+//      - Frames:   thumbnailData() مباشرة بـ 384×384
 // ══════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -24,27 +30,14 @@ import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/domain/deletion/delete_manager.dart';
 import 'package:medi_guard/domain/engines/decision_engine.dart';
 import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+
+const bool kDebugScan = kDebugMode;
+
+const _mediaScannerChannel = MethodChannel('medi_guard/media_scanner');
 
 // ─── Priority ─────────────────────────────────────────────────────────────────
 enum ScanPriority { realtime, high, normal }
-
-// ─── VideoMetadata ────────────────────────────────────────────────────────────
-class VideoMetadata {
-  final int durationMs;
-  final int width;
-  final int height;
-  const VideoMetadata({
-    required this.durationMs,
-    required this.width,
-    required this.height,
-  });
-}
-
-// ─── Channels ─────────────────────────────────────────────────────────────────
-const _videoMetaChannel   = MethodChannel('medi_guard/video_metadata');
-const _mediaScannerChannel = MethodChannel('medi_guard/media_scanner');
-
-const bool kDebugScan = kDebugMode;
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  SmartScanQueue
@@ -55,25 +48,25 @@ class SmartScanQueue {
   final DeleteManager deleteManager;
   final ScanNotificationService notifier;
 
-  // ─── 3 queues منفصلة ──────────────────────────────────────────────────────
+  // ─── 3 queues منفصلة بالأولوية ────────────────────────────────────────────
   final _realtimeQ = <String>[];
-  final _highQ     = <String>[];
-  final _normalQ   = <String>[];
+  final _highQ = <String>[];
+  final _normalQ = <String>[];
 
   // dedup: لا نفحص نفس الملف مرتين في نفس الجلسة
-  final _pending       = <String>{};
-  final _sessionSeen   = <String>{};
+  final _pending = <String>{};
+  final _sessionSeen = <String>{};
 
-  int  _activeWorkers = 0;
-  int  _maxWorkers    = 2;
-  bool _cancelled     = false;
-  bool _isPaused      = false;
+  int _activeWorkers = 0;
+  int _maxWorkers;
+  bool _cancelled = false;
+  bool _isPaused = false;
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
-  int _deletedCount    = 0;
+  int _deletedCount = 0;
   int _realtimeScanned = 0;
-  int _highScanned     = 0;
-  int _normalScanned   = 0;
+  int _highScanned = 0;
+  int _normalScanned = 0;
 
   SmartScanQueue({
     required this.scorer,
@@ -98,7 +91,7 @@ class SmartScanQueue {
     switch (priority) {
       case ScanPriority.realtime:
         _realtimeQ.add(path);
-        _trySpawn(forceRealtime: true); // ممكن يتجاوز الحد بـ +1
+        _trySpawn(forceRealtime: true); // يشغّل worker إضافي فوق الحد
       case ScanPriority.high:
         _highQ.add(path);
         _trySpawn();
@@ -108,12 +101,21 @@ class SmartScanQueue {
     }
   }
 
-  void addBatch(List<String> paths, {ScanPriority priority = ScanPriority.normal}) {
-    for (final p in paths) add(p, priority: priority);
+  void addBatch(List<String> paths,
+      {ScanPriority priority = ScanPriority.normal}) {
+    for (final p in paths) {
+      add(p, priority: priority);
+    }
   }
 
-  void pause()  { _isPaused = true; }
-  void resume() { _isPaused = false; _trySpawn(); }
+  void pause() {
+    _isPaused = true;
+  }
+
+  void resume() {
+    _isPaused = false;
+    _trySpawn();
+  }
 
   void updateWorkers(int n) {
     _maxWorkers = n.clamp(1, 4);
@@ -122,23 +124,26 @@ class SmartScanQueue {
 
   Future<void> dispose() async {
     _cancelled = true;
-    _realtimeQ.clear(); _highQ.clear(); _normalQ.clear();
+    _realtimeQ.clear();
+    _highQ.clear();
+    _normalQ.clear();
     _pending.clear();
+    _sessionSeen.clear();
   }
 
   // ─── Getters ──────────────────────────────────────────────────────────────
-  int get pendingCount  => _realtimeQ.length + _highQ.length + _normalQ.length;
+  int get pendingCount => _realtimeQ.length + _highQ.length + _normalQ.length;
   bool get isProcessing => _activeWorkers > 0 || pendingCount > 0;
-  int get deletedCount  => _deletedCount;
+  int get deletedCount => _deletedCount;
 
   Map<String, int> get metrics => {
-    'realtime' : _realtimeScanned,
-    'high'     : _highScanned,
-    'normal'   : _normalScanned,
-    'deleted'  : _deletedCount,
-    'pending'  : pendingCount,
-    'workers'  : _activeWorkers,
-  };
+        'realtime': _realtimeScanned,
+        'high': _highScanned,
+        'normal': _normalScanned,
+        'deleted': _deletedCount,
+        'pending': pendingCount,
+        'workers': _activeWorkers,
+      };
 
   // ══════════════════════════════════════════════════════════════════════════
   //  WORKER SPAWNING
@@ -147,21 +152,21 @@ class SmartScanQueue {
   void _trySpawn({bool forceRealtime = false}) {
     if (_cancelled || _isPaused) return;
 
-    // realtime ممكن يشغّل worker إضافي واحد فوق الحد
+    // realtime يشغّل worker إضافي واحد فوق الحد
     final effectiveMax = (forceRealtime && _realtimeQ.isNotEmpty)
         ? _maxWorkers + 1
         : _maxWorkers;
 
-    // نشغّل workers بالعدد المطلوب — كل worker يشيل من الـ queue بنفسه
     while (_activeWorkers < effectiveMax && pendingCount > 0) {
       _spawnWorker();
     }
   }
 
   (String, ScanPriority)? _dequeue() {
-    if (_realtimeQ.isNotEmpty) return (_realtimeQ.removeAt(0), ScanPriority.realtime);
-    if (_highQ.isNotEmpty)     return (_highQ.removeAt(0),     ScanPriority.high);
-    if (_normalQ.isNotEmpty)   return (_normalQ.removeAt(0),   ScanPriority.normal);
+    if (_realtimeQ.isNotEmpty)
+      return (_realtimeQ.removeAt(0), ScanPriority.realtime);
+    if (_highQ.isNotEmpty) return (_highQ.removeAt(0), ScanPriority.high);
+    if (_normalQ.isNotEmpty) return (_normalQ.removeAt(0), ScanPriority.normal);
     return null;
   }
 
@@ -179,12 +184,12 @@ class SmartScanQueue {
         try {
           await _processFile(path, priority: priority);
         } catch (e) {
-          if (kDebugScan) debugPrint('[SmartScanQueue] error: $e');
+          if (kDebugScan) debugPrint('[SmartScanQueue] ❌ error: $e');
         }
       }
       _activeWorkers--;
 
-      // لو في الـ queue حاجة تانية جت أثناء الانتظار
+      // لو في حاجة جديدة جت أثناء الشغل
       if (!_cancelled && !_isPaused && pendingCount > 0) _trySpawn();
     });
   }
@@ -193,33 +198,44 @@ class SmartScanQueue {
   //  FILE PROCESSING
   // ══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _processFile(String path, {required ScanPriority priority}) async {
+  Future<void> _processFile(String path,
+      {required ScanPriority priority}) async {
     if (_cancelled) return;
-    final ext = path.split('.').last.toLowerCase();
-    if (ScanTargets.videoExtensions.contains('.$ext')) {
+    if (ScanTargets.isVideo(path)) {
       await _processVideo(path, priority: priority);
-    } else {
+    } else if (ScanTargets.isImage(path)) {
       await _processImage(path, priority: priority);
     }
   }
 
   // ─── IMAGE ────────────────────────────────────────────────────────────────
-  Future<void> _processImage(String path, {required ScanPriority priority}) async {
+  Future<void> _processImage(String path,
+      {required ScanPriority priority}) async {
     final file = File(path);
     if (!await file.exists()) return;
 
     final stat = await file.stat();
-    if (stat.size < 10240)           return; // < 10KB → skip
-    if (stat.size > 50 * 1024 * 1024) return; // > 50MB → skip
+    if (stat.size < 10240) return; // < 10KB → تجاهل
+    if (stat.size > 50 * 1024 * 1024) return; // > 50MB → تجاهل
 
     final hash = await _partialHash(file);
-    final box  = Hive.box('scanned_hashes');
+    final box = Hive.box('scanned_hashes');
     if (box.get(hash) != null) return; // سبق فحصه
 
-    final bytes   = await file.readAsBytes();
-    final scored  = await scorer.score(bytes);
+    final bytes = await file.readAsBytes();
+    final scored = await scorer.score(bytes);
     final decision = engine.decide(scored, scored.rawNsfw, filePath: path);
-    final isNsfw  = decision.result == DecisionResult.reject;
+    final isNsfw = decision.result == DecisionResult.reject;
+
+    if (kDebugScan) {
+      final result = isNsfw ? '❌ NSFW' : '✅ SFW';
+      debugPrint(
+        '[SmartScanQueue] 🖼️ [${priority.name}] $result '
+        '| nsfw=${scored.nsfwScore.toStringAsFixed(3)} '
+        '| weighted=${scored.weighted.toStringAsFixed(3)} '
+        '| ${path.split('/').last}',
+      );
+    }
 
     await _recordStat(path, isNsfw: isNsfw, isVideo: false);
 
@@ -229,55 +245,107 @@ class SmartScanQueue {
         _deletedCount++;
         await Future.wait([_logDeletion(path), _notifyScanner(path)]);
         await notifier.showDeletedNotification(path);
-        if (kDebugScan) debugPrint('🗑️ [${priority.name}] image: $path');
       }
     }
 
     await box.put(hash, 1);
     await _compactIfNeeded();
-    _metric(priority);
+    _countMetric(priority);
   }
 
   // ─── VIDEO ────────────────────────────────────────────────────────────────
-  Future<void> _processVideo(String path, {required ScanPriority priority}) async {
+  Future<void> _processVideo(String path,
+      {required ScanPriority priority}) async {
     final file = File(path);
     if (!await file.exists()) return;
 
     final hash = await _partialHash(file);
-    final box  = Hive.box('scanned_hashes');
-    if (box.get(hash) != null) return;
+    final box = Hive.box('scanned_hashes');
+    if (box.get(hash) != null) return; // سبق فحصه
 
-    final meta       = await _videoMetadata(path);
-    final timestamps = _adaptiveTimestamps(meta.durationMs);
+    // ─── Duration via binary search (بدل native channel) ──────────────────
+    final durationMs = await _estimateDuration(path);
+    final timestamps = _adaptiveTimestamps(durationMs);
+
+    if (kDebugScan) {
+      final m = durationMs ~/ 60000;
+      final s = (durationMs % 60000) ~/ 1000;
+      debugPrint(
+        '[SmartScanQueue] ▶️ [${priority.name}] بدء فحص: ${path.split('/').last} '
+        '| مدة تقريبية: $m:${s.toString().padLeft(2, '0')} '
+        '| إجمالي الفريمات: ${timestamps.length}',
+      );
+      for (int i = 0; i < timestamps.length; i++) {
+        final ms = timestamps[i];
+        final fm = ms ~/ 60000;
+        final fs = (ms % 60000) ~/ 1000;
+        debugPrint(
+          '[SmartScanQueue]   📌 فريم ${i + 1}/${timestamps.length} '
+          '→ $fm:${fs.toString().padLeft(2, '0')} (${ms ~/ 1000}ث)',
+        );
+      }
+    }
 
     bool isNsfw = false;
-    int  frames = 0;
+    int frames = 0;
 
-    for (final ms in timestamps) {
+    for (int i = 0; i < timestamps.length; i++) {
       if (_cancelled) break;
 
-      final frameBytes = await _frameBytes(path, ms);
-      if (frameBytes == null) continue;
+      final ms = timestamps[i];
+
+      if (kDebugScan) {
+        final fm = ms ~/ 60000;
+        final fs = (ms % 60000) ~/ 1000;
+        debugPrint(
+          '[SmartScanQueue] 🔍 جاري فحص فريم ${i + 1}/${timestamps.length} '
+          '| الوقت: $fm:${fs.toString().padLeft(2, '0')} '
+          '| ${path.split('/').last}',
+        );
+      }
+
+      final frameBytes = await _extractFrame(path, ms);
+      if (frameBytes == null) {
+        if (kDebugScan) {
+          debugPrint(
+              '[SmartScanQueue] ⚠️ فريم ${i + 1} فشل في الاستخراج — تخطي');
+        }
+        continue;
+      }
 
       frames++;
       final scored = await scorer.score(frameBytes);
 
       if (kDebugScan) {
+        final fm = ms ~/ 60000;
+        final fs = (ms % 60000) ~/ 1000;
+        final result = scored.rawNsfw.isNsfw ? '❌ NSFW' : '✅ SFW';
         debugPrint(
-          '[${priority.name}] @${ms}ms '
-          'nsfw=${scored.nsfwScore.toStringAsFixed(2)} '
-          'skin=${scored.rawSkinScore.toStringAsFixed(2)} '
-          'weighted=${scored.weighted.toStringAsFixed(2)}',
+          '[SmartScanQueue] $result فريم ${i + 1} '
+          '| الوقت: $fm:${fs.toString().padLeft(2, '0')} '
+          '| nsfw=${scored.rawNsfw.nsfw.toStringAsFixed(3)} '
+          '| weighted=${scored.weighted.toStringAsFixed(3)} '
+          '| ${path.split('/').last}',
         );
       }
 
-      if (scored.rawNsfw.nsfw > scored.rawNsfw.sfw) {
+      if (scored.rawNsfw.isNsfw) {
         isNsfw = true;
-        break; // early exit
+        break; // early exit — مش محتاج نكمل
       }
     }
 
-    await _recordStat(path, isNsfw: frames == 0 ? false : isNsfw, isVideo: true);
+    if (kDebugScan) {
+      final verdict = isNsfw ? '🚫 NSFW — سيتم الحذف' : '✅ آمن';
+      debugPrint(
+        '[SmartScanQueue] 🏁 انتهى فحص: ${path.split('/').last} '
+        '| النتيجة: $verdict '
+        '| فريمات فُحصت: $frames/${timestamps.length}',
+      );
+    }
+
+    await _recordStat(path,
+        isNsfw: frames == 0 ? false : isNsfw, isVideo: true);
 
     if (isNsfw && !_cancelled) {
       final deleted = await deleteManager.deleteImmediately(path);
@@ -285,99 +353,170 @@ class SmartScanQueue {
         _deletedCount++;
         await Future.wait([_logDeletion(path), _notifyScanner(path)]);
         await notifier.showDeletedNotification(path);
-        if (kDebugScan) debugPrint('🗑️ [${priority.name}] video @frame$frames: $path');
       }
     }
 
     await box.put(hash, 1);
     await _compactIfNeeded();
-    _metric(priority);
+    _countMetric(priority);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  ADAPTIVE TIMESTAMPS
-  //  • أول frame  : بعد 8 ث          (تتخطى intro/black screen)
-  //  • آخر frame  : قبل النهاية 15 ث  (تتخطى credits/fade-out)
-  //  • الوسطى     : في الربع الأخير   (NSFW غالباً في النهاية)
+  //  VIDEO DURATION — Binary Search بـ VideoThumbnail
+  //
+  //  المشكلة: MethodChannel('medi_guard/video_metadata') مسجّل على
+  //  الـ main FlutterEngine — الـ background isolate عنده messenger مختلف
+  //  فالـ call بيتجاهل → timeout → fallback 60 ثانية → frames غلطانة.
+  //
+  //  الحل: نستخدم VideoThumbnail.thumbnailData() اللي شغّال في الـ isolate.
+  //  المنطق: لو thumbnailData نجح عند timestamp → الفيديو وصل لهنا.
+  //          لو فشل (null) → الفيديو خلص قبله.
+  //  الدقة: ±5% — كافية لتوزيع الـ frames صح.
+  //  التكلفة: 4–6 probes × ~50ms = ~300ms بدل timeout 5 ثواني.
   // ══════════════════════════════════════════════════════════════════════════
+
+  Future<int> _estimateDuration(String path) async {
+    // Upper bound candidates: 2د → 5د → 15د → 30د → 60د → 120د → 180د
+    const candidates = [
+      2 * 60 * 1000,
+      5 * 60 * 1000,
+      15 * 60 * 1000,
+      30 * 60 * 1000,
+      60 * 60 * 1000,
+      120 * 60 * 1000,
+      180 * 60 * 1000,
+    ];
+
+    // الخطوة 1: ابحث عن أول candidate يفشل → upper bound
+    int lowerMs = 0;
+    int upperMs = candidates.last;
+
+    for (final ms in candidates) {
+      final ok = await _probeTimestamp(path, ms);
+      if (!ok) {
+        upperMs = ms;
+        break;
+      }
+      lowerMs = ms;
+    }
+
+    // لو حتى 2 دقيقة فشلت → الفيديو أقصر من كده — استخدم 60 ث كافتراض
+    if (lowerMs == 0) {
+      return 60000;
+    }
+
+    // الخطوة 2: binary search بين lowerMs و upperMs بدقة ±5%
+    for (int step = 0; step < 4; step++) {
+      final midMs = (lowerMs + upperMs) ~/ 2;
+      if (midMs <= lowerMs) break;
+      final ok = await _probeTimestamp(path, midMs);
+      if (ok) {
+        lowerMs = midMs;
+      } else {
+        upperMs = midMs;
+      }
+    }
+
+    // نضيف 10% هامش أمان
+    final estimated = (lowerMs * 1.10).round();
+
+    if (kDebugScan) {
+      final m = estimated ~/ 60000;
+      final s = (estimated % 60000) ~/ 1000;
+      debugPrint(
+        '[SmartScanQueue] 📏 مدة مقدّرة: $m:${s.toString().padLeft(2, '0')} '
+        '($estimated ms) | ${path.split('/').last}',
+      );
+    }
+
+    return estimated;
+  }
+
+  // probe: هل الفيديو وصل لهذا الـ timestamp؟
+  Future<bool> _probeTimestamp(String path, int timeMs) async {
+    try {
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        timeMs: timeMs,
+        maxWidth: 64,
+        maxHeight: 64,
+        quality: 10,
+      ).timeout(const Duration(seconds: 4));
+      return bytes != null && bytes.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  ADAPTIVE TIMESTAMPS — دايماً 10 frames موزعة على المدة الكاملة
+  //
+  //  أول frame  : عند 10 ث        (يتخطى الـ intro / black screen)
+  //  آخر frame  : قبل النهاية 19ث  (يتخطى الـ credits / fade-out)
+  //  الـ 8 الباقية: موزعة uniform بين first و last
+  //
+  //  الاستثناء الوحيد: فيديو أقصر من 30 ث → frame واحدة في المنتصف
+  //  لأن الـ firstMs و lastMs بيتقاربوا جداً ومش هيفرق
+  //
+  //  مثال:
+  //    فيديو 2 د   → frames كل ~13 ث
+  //    فيديو 8 د   → frames كل ~50 ث
+  //    فيديو 24 د  → frames كل ~2.5 د
+  //    فيديو 60 د  → frames كل ~6 د
+  // ══════════════════════════════════════════════════════════════════════════
+
   List<int> _adaptiveTimestamps(int durationMs) {
     if (durationMs <= 0) return [0];
 
-    // فيديو قصير جداً → المنتصف بس
+    // فيديو أقل من 30 ث → frame واحدة في المنتصف
     if (durationMs < 30000) return [durationMs ~/ 2];
 
-    const firstMs = 8000;
-    final lastMs  = (durationMs - 15000).clamp(firstMs + 1000, durationMs - 1000);
+    // فيديو أكتر من 40 دقيقة → 12 frame، غير كده → 10
+    final totalFrames = durationMs > 40 * 60 * 1000 ? 12 : 10;
+    const firstMs = 10000; // بعد 10 ث — يتخطى الـ intro/black screen
+
+    // آخر frame قبل النهاية بـ 19 ث — يتخطى الـ credits/fade-out
+    final lastMs =
+        (durationMs - 19000).clamp(firstMs + 1000, durationMs - 1000);
+
+    // لو الفيديو قصير جداً ومش في مساحة كافية → توزيع بسيط
     if (lastMs <= firstMs) return [durationMs ~/ 2];
 
-    // عدد الـ frames الوسطى حسب المدة
-    final mid = durationMs < 60000   ? 0
-              : durationMs < 300000  ? 2
-              : durationMs < 1800000 ? 4
-              :                        6;
-
-    if (mid == 0) return [firstMs, lastMs];
-
-    // الوسطى في الربع الأخير (75% → lastMs-1s)
-    final rangeStart = (durationMs * 0.75).round().clamp(firstMs + 1000, lastMs - 1000);
-    final rangeEnd   = lastMs - 1000;
-    final range      = rangeEnd - rangeStart;
-
-    final middle = range > 0
-        ? List.generate(mid, (i) => rangeStart + range * (i + 1) ~/ (mid + 1))
-        : List.generate(mid, (i) => firstMs + (lastMs - firstMs) * (i + 1) ~/ (mid + 1));
-
-    return [firstMs, ...middle, lastMs];
+    // توزيع الـ 10 frames بالتساوي من firstMs لـ lastMs
+    // frame[0] = firstMs, frame[9] = lastMs
+    // الـ 8 الوسطى موزعة uniform
+    return List.generate(
+      totalFrames,
+      (i) => firstMs + ((lastMs - firstMs) * i ~/ (totalFrames - 1)),
+    );
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  NATIVE CALLS
-  // ══════════════════════════════════════════════════════════════════════════
-
-  Future<VideoMetadata> _videoMetadata(String path) async {
+  // استخراج frame بـ VideoThumbnail — zero disk IO
+  Future<Uint8List?> _extractFrame(String path, int timeMs) async {
     try {
-      final r = await _videoMetaChannel
-          .invokeMapMethod<String, dynamic>('getVideoMetadata', {'path': path})
-          .timeout(const Duration(seconds: 5));
-      if (r != null) {
-        return VideoMetadata(
-          durationMs: (r['durationMs'] as num?)?.toInt() ?? 60000,
-          width:      (r['width']      as num?)?.toInt() ?? 0,
-          height:     (r['height']     as num?)?.toInt() ?? 0,
-        );
-      }
-    } catch (_) {}
-    return VideoMetadata(durationMs: 60000, width: 0, height: 0);
-  }
-
-  Future<Uint8List?> _frameBytes(String path, int timeMs) async {
-    try {
-      return await _videoMetaChannel.invokeMethod<Uint8List>(
-        'getFrameBytes',
-        {'path': path, 'timeMs': timeMs, 'size': 384},
+      return await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        timeMs: timeMs,
+        maxWidth: 384,
+        maxHeight: 384,
+        quality: 75,
       ).timeout(const Duration(seconds: 8));
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> _notifyScanner(String path) async {
-    try {
-      await _mediaScannerChannel
-          .invokeMethod('scanFile', {'path': path})
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {}
-  }
-
   // ══════════════════════════════════════════════════════════════════════════
-  //  HASH & STORAGE
+  //  STORAGE & UTILITIES
   // ══════════════════════════════════════════════════════════════════════════
 
   static int _compactCounter = 0;
 
   Future<String> _partialHash(File file) async {
     const chunk = 64 * 1024;
-    final size  = await file.length();
+    final size = await file.length();
     final List<int> bytes;
 
     if (size <= chunk * 2) {
@@ -393,14 +532,23 @@ class SmartScanQueue {
         await raf.close();
       }
     }
-    // 12 حرف = 48-bit = احتمال collision 1 في 281 تريليون
+    // 12 حرف = 48-bit entropy = collision 1 في 281 تريليون
     return sha256.convert(bytes).toString().substring(0, 12);
   }
 
   Future<void> _compactIfNeeded() async {
     if (++_compactCounter < 150) return;
     _compactCounter = 0;
-    try { await Hive.box('scanned_hashes').compact(); } catch (_) {}
+    try {
+      await Hive.box('scanned_hashes').compact();
+    } catch (_) {}
+  }
+
+  Future<void> _notifyScanner(String path) async {
+    try {
+      await _mediaScannerChannel.invokeMethod(
+          'scanFile', {'path': path}).timeout(const Duration(seconds: 3));
+    } catch (_) {}
   }
 
   Future<void> _logDeletion(String path) async {
@@ -408,43 +556,52 @@ class SmartScanQueue {
       final box = Hive.box('deleted_log');
       if (box.length >= 50) await box.delete(box.keys.first);
       await box.add({
-        'fileName' : path.split('/').last,
-        'source'   : _folder(path),
+        'fileName': path.split('/').last,
+        'source': _detectFolder(path),
         'deletedAt': DateTime.now().millisecondsSinceEpoch,
-        'path'     : path,
+        'path': path,
       });
     } catch (_) {}
   }
 
-  Future<void> _recordStat(String path, {required bool isNsfw, required bool isVideo}) async {
+  Future<void> _recordStat(String path,
+      {required bool isNsfw, required bool isVideo}) async {
     try {
-      final box   = Hive.box('scan_stats');
+      final box = Hive.box('scan_stats');
       final today = DateTime.now().toIso8601String().substring(0, 10);
-      final key   = 'stat_$today';
-      final prev  = (box.get(key) as Map?) ?? {};
+      final key = 'stat_$today';
+      final prev = (box.get(key) as Map<dynamic, dynamic>?) ?? {};
       await box.put(key, {
         ...prev,
-        'total' : ((prev['total']  as int?) ?? 0) + 1,
-        if (isNsfw)  'nsfw'  : ((prev['nsfw']   as int?) ?? 0) + 1,
+        'total': ((prev['total'] as int?) ?? 0) + 1,
+        if (isNsfw) 'nsfw': ((prev['nsfw'] as int?) ?? 0) + 1,
         if (isVideo) 'videos': ((prev['videos'] as int?) ?? 0) + 1,
       });
     } catch (_) {}
   }
 
-  String _folder(String path) {
-    if (path.contains('/WhatsApp/')) return 'WhatsApp';
-    if (path.contains('/Telegram/')) return 'Telegram';
-    if (path.contains('/Download/')) return 'Download';
-    if (path.contains('/DCIM/'))     return 'Camera';
-    if (path.contains('/Pictures/')) return 'Pictures';
-    return 'Other';
+  String _detectFolder(String path) {
+    if (path.contains('/WhatsApp/')) return 'واتساب';
+    if (path.contains('/Telegram/')) return 'تيليجرام';
+    if (path.contains('/Download/')) return 'التنزيلات';
+    if (path.contains('/DCIM/')) return 'الكاميرا';
+    if (path.contains('/Instagram')) return 'إنستجرام';
+    if (path.contains('/TikTok/')) return 'تيك توك';
+    if (path.contains('/Snapchat/')) return 'سناب شات';
+    if (path.contains('/Pictures/')) return 'الصور';
+    if (path.contains('/Movies/') || path.contains('/Videos/'))
+      return 'الفيديوهات';
+    return 'أخرى';
   }
 
-  void _metric(ScanPriority p) {
+  void _countMetric(ScanPriority p) {
     switch (p) {
-      case ScanPriority.realtime: _realtimeScanned++;
-      case ScanPriority.high:     _highScanned++;
-      case ScanPriority.normal:   _normalScanned++;
+      case ScanPriority.realtime:
+        _realtimeScanned++;
+      case ScanPriority.high:
+        _highScanned++;
+      case ScanPriority.normal:
+        _normalScanned++;
     }
   }
 }

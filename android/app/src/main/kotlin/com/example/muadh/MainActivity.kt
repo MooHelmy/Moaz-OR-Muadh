@@ -31,6 +31,7 @@ class MainActivity : FlutterActivity() {
     private val VIDEO_META_CHANNEL  = "medi_guard/video_metadata"
     private val DEVICE_INFO_CHANNEL = "medi_guard/device_info"
     private val MEDIA_STORE_CHANNEL = "medi_guard/media_store"
+    private val SCAN_FILE_CHANNEL    = "medi_guard/scan_file"
 
     private var eventSink: EventChannel.EventSink? = null
     private val observers = mutableListOf<FileObserver>()
@@ -56,6 +57,40 @@ class MainActivity : FlutterActivity() {
         setupVideoMetadataChannel(flutterEngine)
         setupDeviceInfoChannel(flutterEngine)
         setupMediaStoreChannel(flutterEngine)
+        setupScanFileChannel(flutterEngine)
+    }
+
+
+    // ─── Scan File Channel ─────────────────────────────────────────────────────
+    // يستقبل broadcast من MaadhAccessibilityService لما المستخدم يفتح ملف ميديا
+    // الحل: نكتب الـ path في SharedPreferences وبعدين نبعت event لـ Flutter
+    // Flutter (main isolate) بيستقبله ويبعته للـ background task بـ sendDataToTask
+    private var scanFileEventSink: EventChannel.EventSink? = null
+
+    private fun setupScanFileChannel(flutterEngine: FlutterEngine) {
+        // EventChannel على main engine — بيسمعه Flutter في main isolate
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SCAN_FILE_CHANNEL
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+                scanFileEventSink = sink
+            }
+            override fun onCancel(arguments: Any?) {
+                scanFileEventSink = null
+            }
+        })
+
+        // استقبل الـ broadcast من MaadhAccessibilityService
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val path = intent?.getStringExtra("path") ?: return
+                android.util.Log.d("ScanFileChannel", "📤 accessibility path: $path")
+                // بعت على EventChannel → main isolate → sendDataToTask → background task
+                runOnUiThread { scanFileEventSink?.success(path) }
+            }
+        }
+        registerReceiver(receiver, IntentFilter("com.maadh.shield.SCAN_FILE"))
     }
 
     // ─── MediaStore Channel ────────────────────────────────────────────────────
