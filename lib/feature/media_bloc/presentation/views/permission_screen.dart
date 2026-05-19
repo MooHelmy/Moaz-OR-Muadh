@@ -12,6 +12,7 @@ class PermissionScreen extends StatefulWidget {
 
 class _PermissionScreenState extends State<PermissionScreen> {
   bool _loading = true;
+  bool _requesting = false; // ← منع double-tap أو double-call
 
   @override
   void initState() {
@@ -28,12 +29,12 @@ class _PermissionScreenState extends State<PermissionScreen> {
           await Permission.storage.isGranted;
 
       if (storageOk && mounted) {
-        final showAccessibilityOnboarding =
+        final showOnboarding =
             !(prefs.getBool('accessibility_onboarding_shown') ?? false);
-        if (showAccessibilityOnboarding) {
+        if (showOnboarding) {
           await prefs.setBool('accessibility_onboarding_shown', true);
         }
-        widget.onGranted(showAccessibilityOnboarding);
+        widget.onGranted(showOnboarding);
         return;
       }
     }
@@ -42,29 +43,52 @@ class _PermissionScreenState extends State<PermissionScreen> {
   }
 
   Future<void> _requestAll() async {
-    if (await Permission.manageExternalStorage.isDenied) {
-      await Permission.manageExternalStorage.request();
-    }
-    await Permission.storage.request();
-    await Permission.notification.request();
+    // منع التنفيذ المزدوج
+    if (_requesting) return;
+    setState(() => _requesting = true);
 
-    final storageGranted = await Permission.manageExternalStorage.isGranted ||
-        await Permission.storage.isGranted;
-
-    if (storageGranted) {
-      final prefs = await SharedPreferences.getInstance();
-      final alreadyShown =
-          prefs.getBool('accessibility_onboarding_shown') ?? false;
-      final showAccessibilityOnboarding = !alreadyShown;
-
-      await prefs.setBool('permissions_granted', true);
-      if (showAccessibilityOnboarding) {
-        await prefs.setBool('accessibility_onboarding_shown', true);
+    try {
+      // ✅ نطلب الصلاحيات واحدة واحدة مع await كامل بينهم
+      // manageExternalStorage أولاً لأنها الأهم
+      if (await Permission.manageExternalStorage.isDenied) {
+        await Permission.manageExternalStorage.request();
+        // ننتظر شوية عشان Android يستقر بعد الـ dialog
+        await Future.delayed(const Duration(milliseconds: 300));
       }
 
-      widget.onGranted(showAccessibilityOnboarding);
-    } else {
-      await openAppSettings();
+      if (await Permission.storage.isDenied) {
+        await Permission.storage.request();
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+
+      if (await Permission.notification.isDenied) {
+        await Permission.notification.request();
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+
+      final storageGranted = await Permission.manageExternalStorage.isGranted ||
+          await Permission.storage.isGranted;
+
+      if (!mounted) return;
+
+      if (storageGranted) {
+        final prefs = await SharedPreferences.getInstance();
+        final alreadyShown =
+            prefs.getBool('accessibility_onboarding_shown') ?? false;
+        final showOnboarding = !alreadyShown;
+
+        await prefs.setBool('permissions_granted', true);
+        if (showOnboarding) {
+          await prefs.setBool('accessibility_onboarding_shown', true);
+        }
+
+        widget.onGranted(showOnboarding);
+      } else {
+        // المستخدم رفض — افتح الإعدادات
+        await openAppSettings();
+      }
+    } finally {
+      if (mounted) setState(() => _requesting = false);
     }
   }
 
@@ -97,9 +121,20 @@ class _PermissionScreenState extends State<PermissionScreen> {
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
-                onPressed: _requestAll,
-                icon: const Icon(Icons.lock_open),
-                label: const Text('منح الصلاحيات والبدء'),
+                // لو بيشتغل → disable الزر
+                onPressed: _requesting ? null : _requestAll,
+                icon: _requesting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.lock_open),
+                label: Text(
+                    _requesting ? 'جاري المنح...' : 'منح الصلاحيات والبدء'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF064E3B),
                   foregroundColor: Colors.white,

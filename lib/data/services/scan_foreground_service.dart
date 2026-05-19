@@ -50,13 +50,16 @@ class ScanServiceManager {
         eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
-        allowWakeLock: false,
+        allowWakeLock: true,
         allowWifiLock: false,
       ),
     );
   }
 
   static Future<void> start() async {
+    // طلب استثناء من Battery Optimization عشان الـ service ميتقتلش
+    await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.restartService();
     } else {
@@ -233,7 +236,7 @@ class ScanTaskHandler extends TaskHandler {
     _lastBatteryCheckMs = now;
 
     _battery.batteryLevel.then((level) {
-      _isLowBattery = level < 10;
+      _isLowBattery = level < 5;
       if (_isLowBattery) _queue?.pause();
     });
 
