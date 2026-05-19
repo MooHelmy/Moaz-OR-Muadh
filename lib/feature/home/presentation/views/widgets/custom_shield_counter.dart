@@ -21,11 +21,10 @@ class _CustomShieldCounterState extends State<CustomShieldCounter> {
 
   Future<void> _loadUsageDuration() async {
     final usageDuration = await SharePreferencesService.getUsageDuration();
-    final loadedDays = usageDuration["days"] ?? 0;
+    // إضافة 1 لتمثيل "اليوم الحالي" في الرحلة
+    final currentDay = (usageDuration["days"] ?? 0) + 1;
     if (!mounted) return;
-    setState(() {
-      days = loadedDays;
-    });
+    setState(() => days = currentDay);
   }
 
   @override
@@ -64,7 +63,7 @@ class _CustomShieldCounterState extends State<CustomShieldCounter> {
                 size: 38,
               ),
               Text(
-                "${days == 0 ? 1 : days}", // ✅ FIX #27: عرض 1 يوم بدلاً من 0
+                "$days",
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 60,

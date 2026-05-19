@@ -108,7 +108,7 @@ class MuadhApp extends ConsumerWidget {
           navigatorKey: navigatorKey,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
-          themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          themeMode: !isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: PermissionScreen(
             onGranted: (showAccessibilityOnboarding) async {
               await FileObserverChannel.startWatching(ScanTargets.folders);
