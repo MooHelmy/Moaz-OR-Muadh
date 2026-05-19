@@ -92,18 +92,17 @@ class HomeBody extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'مرحبا بك في مَعاذ',
                 style: titleStyle,
-                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
               ),
               const SizedBox(height: 8),
               Text(
                 'تابع يومك، واستمر في حماية نفسك بثقة.',
                 style: subtitleStyle,
-                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
               ),
               SizedBox(height: isSmallScreen ? 18 : 26),
               const StatusRow(),
