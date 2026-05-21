@@ -52,15 +52,17 @@ class MonitoringBody extends StatelessWidget {
     final totalMinutes = (now.hour * 60) + now.minute;
 
     // 1. حساب المحذوفات لكل فولدر من سجل الحذف الفعلي
+    // تم تحسين الأداء هنا بتقليل عدد العمليات داخل الحلقة
     final Map<String, int> folderDeletedCount = {};
     final Map<String, int> folderDeletedImages = {};
     final Map<String, int> folderDeletedVideos = {};
 
-    for (int i = 0; i < deletedBox.length; i++) {
-      final entry = deletedBox.getAt(i) as Map?;
+    // نمر فقط على العناصر الموجودة فعلياً
+    for (final entry in deletedBox.values) {
       if (entry != null) {
-        final source = entry['source'] as String? ?? 'أخرى';
-        final fileName = (entry['fileName'] as String? ?? '').toLowerCase();
+        final Map data = entry as Map;
+        final source = data['source'] as String? ?? 'أخرى';
+        final fileName = (data['fileName'] as String? ?? '').toLowerCase();
 
         folderDeletedCount[source] = (folderDeletedCount[source] ?? 0) + 1;
 
@@ -233,62 +235,66 @@ class MonitoringBody extends StatelessWidget {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           sliver: SliverToBoxAdapter(
-            child: ValueListenableBuilder(
-              valueListenable:
-                  Hive.box('scan_stats').listenable(keys: ['total_stats']),
-              builder: (context, Box statsBox, _) {
-                return ValueListenableBuilder(
-                  valueListenable: Hive.box('deleted_log').listenable(),
-                  builder: (context, Box deletedBox, _) {
-                    final totalStats = _getTotalStats();
-                    final totalScanned = totalStats['scanned'] as int;
-                    final totalBlocked = totalStats['blocked'] as int;
-                    final safePercent = totalScanned > 0
-                        ? ((totalScanned - totalBlocked) / totalScanned * 100)
-                            .round()
-                        : 100;
-                    final blockedPercent =
-                        totalScanned > 0 ? 100 - safePercent : 0;
-                    final deletedLen = deletedBox.length;
+            child: RepaintBoundary(
+              // إضافة حاجز لإعادة الرسم لتحسين الأداء
+              child: ValueListenableBuilder(
+                valueListenable:
+                    Hive.box('scan_stats').listenable(keys: ['total_stats']),
+                builder: (context, Box statsBox, _) {
+                  return ValueListenableBuilder(
+                    valueListenable: Hive.box('deleted_log').listenable(),
+                    builder: (context, Box deletedBox, _) {
+                      final totalStats = _getTotalStats();
+                      final totalScanned = totalStats['scanned'] as int;
+                      final totalBlocked = totalStats['blocked'] as int;
+                      final safePercent = totalScanned > 0
+                          ? ((totalScanned - totalBlocked) / totalScanned * 100)
+                              .round()
+                          : 100;
+                      final blockedPercent =
+                          totalScanned > 0 ? 100 - safePercent : 0;
+                      final deletedLen = deletedBox.length;
 
-                    return Column(
-                      children: [
-                        ShieldSummaryCard(
-                          totalScanned: totalScanned,
-                          totalBlocked: totalBlocked,
-                          safePercent: safePercent,
-                          blockedPercent: blockedPercent,
-                          deletedCount: deletedLen,
-                        ),
-                        const SizedBox(height: 20),
-                        QuickStatsRow(
-                          totalScanned:
-                              totalScanned, // تم حسابه مسبقاً في _getTotalStats
-                          totalBlocked: totalBlocked,
-                          foldersCount: _getSimulatedFolders(Hive.box(
-                                  'scan_stats')
-                              .keys
-                              .where((k) => k.toString().startsWith('folder_'))
-                              .length),
-                          deletedCount: deletedLen,
-                        ),
-                        if (totalScanned > 0) ...[
-                          const SizedBox(height: 24),
-                          const SectionHeader(
-                              title: 'نسبة الأمان',
-                              icon: Icons.donut_large_rounded),
-                          const SizedBox(height: 12),
-                          PieChartCard(
-                            safeCount: totalScanned - totalBlocked,
-                            blockedCount: totalBlocked,
-                            total: totalScanned,
+                      return Column(
+                        children: [
+                          ShieldSummaryCard(
+                            totalScanned: totalScanned,
+                            totalBlocked: totalBlocked,
+                            safePercent: safePercent,
+                            blockedPercent: blockedPercent,
+                            deletedCount: deletedLen,
                           ),
+                          const SizedBox(height: 20),
+                          QuickStatsRow(
+                            totalScanned:
+                                totalScanned, // تم حسابه مسبقاً في _getTotalStats
+                            totalBlocked: totalBlocked,
+                            foldersCount: _getSimulatedFolders(
+                                Hive.box('scan_stats')
+                                    .keys
+                                    .where((k) =>
+                                        k.toString().startsWith('folder_'))
+                                    .length),
+                            deletedCount: deletedLen,
+                          ),
+                          if (totalScanned > 0) ...[
+                            const SizedBox(height: 24),
+                            const SectionHeader(
+                                title: 'نسبة الأمان',
+                                icon: Icons.donut_large_rounded),
+                            const SizedBox(height: 12),
+                            PieChartCard(
+                              safeCount: totalScanned - totalBlocked,
+                              blockedCount: totalBlocked,
+                              total: totalScanned,
+                            ),
+                          ],
                         ],
-                      ],
-                    );
-                  },
-                );
-              },
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -316,17 +322,19 @@ class MonitoringBody extends StatelessWidget {
                           );
                         }
                         final f = folderStats[index - 1];
-                        return FolderStatCard(
-                          key: ValueKey('folder_${f['name']}'),
-                          name: f['name'] as String,
-                          total: f['total'] as int,
-                          blocked: f['blocked'] as int,
-                          safe: f['safe'] as int,
-                          images: f['images'] as int,
-                          videos: f['videos'] as int,
-                          lastScan: _timeAgo(f['lastScan'] as int),
-                          icon: _folderIcon(f['name'] as String),
-                          color: _folderColor(f['name'] as String),
+                        return RepaintBoundary(
+                          child: FolderStatCard(
+                            key: ValueKey('folder_${f['name']}'),
+                            name: f['name'] as String,
+                            total: f['total'] as int,
+                            blocked: f['blocked'] as int,
+                            safe: f['safe'] as int,
+                            images: f['images'] as int,
+                            videos: f['videos'] as int,
+                            lastScan: _timeAgo(f['lastScan'] as int),
+                            icon: _folderIcon(f['name'] as String),
+                            color: _folderColor(f['name'] as String),
+                          ),
                         );
                       },
                       childCount: folderStats.length + 1,
@@ -373,13 +381,15 @@ class MonitoringBody extends StatelessWidget {
                         // الحصول على المفتاح الفريد للعنصر
                         final dynamic itemKey = deletedBox.keyAt(physicalIndex);
 
-                        return DeleteLogCard(
-                          key: ValueKey('del_${entry['deletedAt']}'),
-                          fileName: entry['fileName'] ?? 'ملف',
-                          source: entry['source'] ?? 'أخرى',
-                          timeMs: entry['deletedAt'] as int? ?? 0,
-                          timeAgo: _timeAgo(entry['deletedAt'] as int? ?? 0),
-                          onPressed: () => deletedBox.delete(itemKey),
+                        return RepaintBoundary(
+                          child: DeleteLogCard(
+                            key: ValueKey('del_${entry['deletedAt']}'),
+                            fileName: entry['fileName'] ?? 'ملف',
+                            source: entry['source'] ?? 'أخرى',
+                            timeMs: entry['deletedAt'] as int? ?? 0,
+                            timeAgo: _timeAgo(entry['deletedAt'] as int? ?? 0),
+                            onPressed: () => deletedBox.delete(itemKey),
+                          ),
                         );
                       },
                       childCount: displayCount,

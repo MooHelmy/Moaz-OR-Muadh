@@ -40,6 +40,8 @@ fluttericon:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#012720"
+  adaptive_icon_foreground: "assets/icon/icon.png"
 flutter:
   uses-material-design: true
   assets:
