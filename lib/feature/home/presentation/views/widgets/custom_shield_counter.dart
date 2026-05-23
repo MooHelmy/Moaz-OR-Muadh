@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:medi_guard/core/utils/shared_preferences_service.dart';
 
@@ -23,6 +25,7 @@ class _CustomShieldCounterState extends State<CustomShieldCounter> {
     final usageDuration = await SharePreferencesService.getUsageDuration();
     // إضافة 1 لتمثيل "اليوم الحالي" في الرحلة
     final currentDay = (usageDuration["days"] ?? 0) + 1;
+    log("days =${usageDuration["days"]}, " "hours=${usageDuration["hours"]}");
     if (!mounted) return;
     setState(() => days = currentDay);
   }

@@ -3,6 +3,12 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
+import 'package:medi_guard/feature/splash/data/model/particles_model.dart';
+import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_beta_tech_logo.dart';
+import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_grid_painter.dart';
+import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_orbit_ring.dart';
+import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_particles.dart';
 
 class SplashViewBody extends StatefulWidget {
   const SplashViewBody({super.key, required this.showAccessibilityOnboarding});
@@ -95,20 +101,24 @@ class _SplashViewBodyState extends State<SplashViewBody>
       ));
     }
 
+    navigatorAfterAnimationEnd();
+  }
+
+  void navigatorAfterAnimationEnd() {
     master.forward().then((_) {
       if (!mounted) return;
       Future.delayed(const Duration(milliseconds: 1000), () {
         if (!mounted) return;
-        // Navigator.of(context).pushReplacement(
-        //   PageRouteBuilder(
-        //     transitionDuration: const Duration(milliseconds: 700),
-        //     pageBuilder: (_, __, ___) => MainTabView(
-        //       showAccessibilityPrompt: widget.showAccessibilityOnboarding,
-        //     ),
-        //     transitionsBuilder: (_, anim, __, child) =>
-        //         FadeTransition(opacity: anim, child: child),
-        //   ),
-        // );
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 700),
+            pageBuilder: (_, __, ___) => MainTabView(
+              showAccessibilityPrompt: widget.showAccessibilityOnboarding,
+            ),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+          ),
+        );
       });
     });
   }
@@ -192,73 +202,14 @@ class _SplashViewBodyState extends State<SplashViewBody>
                     SizedBox(
                       height: 45,
                     ),
-                    SizedBox(
-                      width: double
-                          .infinity, // يخلي الحاوية تأخذ عرض الشاشة بالكامل
-                      height: 220, // ارتفاع ثابت ومنتظم لمنطقة اللوجو
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // End of Scan line
-
-                          // Beta symbol and Tech text in a Row
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Beta symbol as text with zoom and two colors
-                              Opacity(
-                                opacity: _betaTextOpacity.value.clamp(0.0, 1.0),
-                                child: Transform.scale(
-                                  scale: _betaScale.value,
-                                  child: Transform.rotate(
-                                    angle: _betaRotation
-                                        .value, // تطبيق الدوران هنا
-                                    child: ShaderMask(
-                                      shaderCallback: (bounds) =>
-                                          LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Color(0xFFb34864),
-                                          const Color(0xFF4e6d89)
-                                              .withOpacity(0.5),
-                                          // const Color(
-                                          //     0xFF551a8b), // الأزرق المضيء - لون جديد
-                                          // const Color(
-                                          //     0xFF29B6F6), // أزرق داكن للتدرج
-                                        ],
-                                      ).createShader(bounds),
-                                      child: Text('β', // Beta character
-
-                                          style: TextStyle(
-                                            fontSize:
-                                                120, // Adjust size as needed
-                                            fontWeight: FontWeight.w900,
-                                            height: 1,
-                                          )),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(
-                                  width: 10), // Space between Beta and Tech
-                              // "Tech"
-                              Opacity(
-                                opacity: _techOpacity.value.clamp(0.0, 1.0),
-                                child: Transform.translate(
-                                  offset: Offset(_techSlide.value, 0),
-                                  child: TechTex(
-                                    pulse: p,
-                                    letterAnims: _techLetterAnims,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ), // End of Beta symbol and Tech text Row
-                        ],
-                      ),
-                    ),
+                    CustomBetaLog(
+                        betaTextOpacity: _betaTextOpacity,
+                        betaScale: _betaScale,
+                        betaRotation: _betaRotation,
+                        techOpacity: _techOpacity,
+                        techSlide: _techSlide,
+                        p: p,
+                        techLetterAnims: _techLetterAnims),
                     const SizedBox(height: 40),
                     // Tagline
                     Opacity(
@@ -354,206 +305,51 @@ class _SplashViewBodyState extends State<SplashViewBody>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  "Tech" text
-// ═══════════════════════════════════════════════════════════════
-class TechTex extends StatelessWidget {
-  final double pulse;
-  final List<Animation<double>> letterAnims;
-  const TechTex({required this.pulse, required this.letterAnims});
+class CustomBetaLog extends StatelessWidget {
+  const CustomBetaLog({
+    super.key,
+    required Animation<double> betaTextOpacity,
+    required Animation<double> betaScale,
+    required Animation<double> betaRotation,
+    required Animation<double> techOpacity,
+    required Animation<double> techSlide,
+    required this.p,
+    required List<Animation<double>> techLetterAnims,
+  })  : _betaTextOpacity = betaTextOpacity,
+        _betaScale = betaScale,
+        _betaRotation = betaRotation,
+        _techOpacity = techOpacity,
+        _techSlide = techSlide,
+        _techLetterAnims = techLetterAnims;
+
+  final Animation<double> _betaTextOpacity;
+  final Animation<double> _betaScale;
+  final Animation<double> _betaRotation;
+  final Animation<double> _techOpacity;
+  final Animation<double> _techSlide;
+  final double p;
+  final List<Animation<double>> _techLetterAnims;
 
   @override
   Widget build(BuildContext context) {
-    const String text = "Tech";
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(text.length, (i) {
-        return Opacity(
-          opacity: letterAnims[i].value.clamp(0.0, 1.0),
-          child: Transform.translate(
-            // حركة بسيطة لكل حرف من أسفل لأعلى عند ظهوره
-            offset: Offset(0, 10 * (1 - letterAnims[i].value)),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // طبقة التوهج الناعم لكل حرف
-                Text(
-                  text[i],
-                  style: TextStyle(
-                    fontSize: 62,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -2.5,
-                    foreground: Paint()
-                      ..color = const Color(0xFF4FC3F7).withOpacity(
-                          (0.22 + pulse * 0.12) * letterAnims[i].value)
-                      ..maskFilter =
-                          const MaskFilter.blur(BlurStyle.normal, 22),
-                  ),
-                ),
-                // الطبقة الحادة لكل حرف
-                Text(
-                  text[i],
-                  style: TextStyle(
-                    fontSize: 62,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -2.5,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: const Color(0xFF4FC3F7).withOpacity(
-                            (0.65 + pulse * 0.35) * letterAnims[i].value),
-                        blurRadius:
-                            28 + (pulse * 10), // زيادة blurRadius مع النبض
-                      ),
-                      Shadow(
-                        color: const Color(0xFF0288D1).withOpacity(
-                            (0.35 + pulse * 0.25) * letterAnims[i].value),
-                        blurRadius:
-                            55 + (pulse * 15), // زيادة blurRadius مع النبض
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
+    return SizedBox(
+      width: double.infinity, // يخلي الحاوية تأخذ عرض الشاشة بالكامل
+      height: 220, // ارتفاع ثابت ومنتظم لمنطقة اللوجو
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Beta symbol and Tech text in a Row
+          CustomBetaTechLogo(
+              betaTextOpacity: _betaTextOpacity,
+              betaScale: _betaScale,
+              betaRotation: _betaRotation,
+              techOpacity: _techOpacity,
+              techSlide: _techSlide,
+              p: p,
+              techLetterAnims:
+                  _techLetterAnims), // End of Beta symbol and Tech text Row
+        ],
+      ),
     );
   }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Orbit ring
-// ═══════════════════════════════════════════════════════════════
-class OrbitRingPainter extends CustomPainter {
-  final double pulseT;
-  final double masterProgress;
-
-  const OrbitRingPainter({required this.pulseT, required this.masterProgress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 6;
-    final op = masterProgress.clamp(0.0, 1.0);
-
-    // Dashed ring
-    final dashPaint = Paint()
-      ..color = const Color(0xFF4FC3F7).withOpacity(0.12 * op)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    dashed(canvas, c, r, dashPaint);
-
-    // 4 accent dots at cardinal positions
-    for (int i = 0; i < 4; i++) {
-      final a = i * pi / 2;
-      final pos = Offset(c.dx + r * cos(a), c.dy + r * sin(a));
-      final bright = (i == 0) ? 0.65 + pulseT * 0.35 : 0.25;
-      canvas.drawCircle(
-          pos,
-          4,
-          Paint()
-            ..color = const Color(0xFF4FC3F7).withOpacity(0.15 * op)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8));
-      canvas.drawCircle(pos, 2,
-          Paint()..color = const Color(0xFF4FC3F7).withOpacity(bright * op));
-    }
-  }
-
-  void dashed(Canvas canvas, Offset c, double r, Paint p) {
-    const dashLen = 8.0;
-    const gapLen = 6.0;
-    const step = dashLen + gapLen;
-    final count = (2 * pi * r / step).floor();
-    for (int i = 0; i < count; i++) {
-      final start = i * step / r;
-      final sweep = dashLen / r;
-      canvas.drawArc(
-          Rect.fromCircle(center: c, radius: r), start, sweep, false, p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant OrbitRingPainter old) =>
-      old.pulseT != pulseT || old.masterProgress != masterProgress;
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Grid
-// ═══════════════════════════════════════════════════════════════
-class GridPainter extends CustomPainter {
-  final double progress;
-  const GridPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF4FC3F7)
-          .withOpacity((0.055 * progress).clamp(0.0, 0.055))
-      ..strokeWidth = 0.5;
-    const gap = 38.0;
-    for (double x = 0; x < size.width; x += gap) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += gap) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant GridPainter old) => old.progress != progress;
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Particles
-// ═══════════════════════════════════════════════════════════════
-class ParticlePainter extends CustomPainter {
-  final List<Particle> particles;
-  final double tick;
-  final double masterProgress;
-
-  const ParticlePainter({
-    required this.particles,
-    required this.tick,
-    required this.masterProgress,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final p in particles) {
-      final dy = sin(tick * 2 * pi * p.speed + p.phase) * 9;
-      final twinkle =
-          (0.5 + 0.5 * sin(tick * 2 * pi * p.twinkleSpeed + p.phase)) *
-              masterProgress;
-      canvas.drawCircle(
-        Offset(p.x, p.y + dy),
-        p.r,
-        Paint()
-          ..color = const Color(0xFF8ECFEE)
-              .withOpacity((p.opacity * twinkle).clamp(0.0, 0.5))
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant ParticlePainter _) => true;
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Particle data
-// ═══════════════════════════════════════════════════════════════
-class Particle {
-  final double x, y, r, speed, phase, opacity, twinkleSpeed;
-
-  const Particle({
-    required this.x,
-    required this.y,
-    required this.r,
-    required this.speed,
-    required this.phase,
-    required this.opacity,
-    required this.twinkleSpeed,
-  });
 }

@@ -100,7 +100,7 @@ class HomeBody extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'تابع يومك، واستمر في حماية نفسك بثقة.',
+                'استعن بالله وتابع يومك، واستمر في حماية نفسك بثقة.',
                 style: subtitleStyle,
                 textDirection: TextDirection.rtl,
               ),

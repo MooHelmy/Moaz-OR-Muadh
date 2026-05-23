@@ -6,6 +6,7 @@ class CustomVerseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 25),
       padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(
@@ -23,7 +24,7 @@ class CustomVerseCard extends StatelessWidget {
       child: Column(
         children: [
           const Text(
-            "«مَعَاذَ اللَّهِ ۖ إِنَّهُ رَبِّي أَحْسَنَ مَثْوَايَ»",
+            "« مَعَاذَ اللَّهِ ۖ إِنَّهُ رَبِّي أَحْسَنَ مَثْوَايَ »",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 19,
@@ -33,7 +34,6 @@ class CustomVerseCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 25),
-          // const EmergencyActionButton(), // زر منفصل لسهولة التعديل
         ],
       ),
     );
