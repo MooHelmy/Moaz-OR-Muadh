@@ -12,6 +12,7 @@ import 'package:medi_guard/data/services/notification_service.dart';
 import 'package:medi_guard/data/services/scan_foreground_service.dart';
 import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
 import 'package:medi_guard/feature/splash/presentation/view/splash_view.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -30,27 +31,22 @@ class AppBootstrapper {
       Hive.openBox('scanned_hashes'),
       Hive.openBox('decisions'),
       Hive.openBox('deleted_log'),
-      Hive.openBox('scan_stats'), // ✅ كان موجود في الـ task handler بس مش هنا
+      Hive.openBox('scan_stats'),
     ]);
 
     _compactIfNeeded('scanned_hashes', threshold: 300);
     _compactIfNeeded('decisions', threshold: 100);
     _compactIfNeeded('deleted_log', threshold: 50);
-
-    // ✅ FIX: لو الـ hashes box كبرت جداً → نحذف القديم
-    // المستخدم ما بيحتاجش hashes أقدم من 30 يوم
-    // كل hash = ~32 bytes — نبقى على آخر 3000 بحد أقصى
     _pruneOldHashes();
+
+    // ✅ طلب إذن Overlay عند أول فتح للتطبيق
+    await _requestOverlayPermission();
 
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
 
     await ScanServiceManager.initialize();
 
-    // ─── Accessibility → Background Task bridge ────────────────────────────
-    // MaadhAccessibilityService بيبعت الـ path لـ MainActivity عبر broadcast
-    // MainActivity بيبعته هنا عبر EventChannel (main engine = main isolate = شغّال)
-    // إحنا بنبعته للـ background task عبر FlutterForegroundTask.sendDataToTask
     const EventChannel('medi_guard/scan_file')
         .receiveBroadcastStream()
         .listen((dynamic data) {
@@ -60,6 +56,12 @@ class AppBootstrapper {
     });
   }
 
+  static Future<void> _requestOverlayPermission() async {
+    if (!await Permission.systemAlertWindow.isGranted) {
+      await Permission.systemAlertWindow.request();
+    }
+  }
+
   static void _compactIfNeeded(String boxName, {required int threshold}) {
     final box = Hive.box(boxName);
     if (box.length > threshold) {
@@ -67,16 +69,11 @@ class AppBootstrapper {
     }
   }
 
-  // ✅ FIX: نحذف الـ hashes الزيادة لو تجاوزت 3000
-  // الجهاز مش محتاج يتذكر أكثر من 3000 ملف قديم —
-  // لو الملف اتغير أو اتحذف من الجهاز هيتمسح من hive تلقائياً
   static void _pruneOldHashes() {
     try {
       const maxHashes = 3000;
       final box = Hive.box('scanned_hashes');
       if (box.length <= maxHashes) return;
-
-      // احذف الأقدم حتى نوصل للـ max
       final toDelete = box.length - maxHashes;
       final keys = box.keys.take(toDelete).toList();
       box.deleteAll(keys);
