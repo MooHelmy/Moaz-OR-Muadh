@@ -1,5 +1,5 @@
+import 'package:Muadh/core/utils/shared_preferences_service.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/core/utils/shared_preferences_service.dart';
 
 class CustomRankCard extends StatefulWidget {
   const CustomRankCard({super.key});

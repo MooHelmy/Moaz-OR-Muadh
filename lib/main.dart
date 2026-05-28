@@ -1,18 +1,18 @@
+import 'package:Muadh/core/constants/scan_targets.dart';
+import 'package:Muadh/core/theme/app_theme.dart';
+import 'package:Muadh/core/theme/theme_provider.dart';
+import 'package:Muadh/core/utils/shared_preferences_service.dart';
+import 'package:Muadh/data/services/file_observer_channel.dart';
+import 'package:Muadh/data/services/notification_service.dart';
+import 'package:Muadh/data/services/scan_foreground_service.dart';
+import 'package:Muadh/feature/media_bloc/presentation/views/permission_screen.dart';
+import 'package:Muadh/feature/splash/presentation/view/splash_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:medi_guard/core/constants/scan_targets.dart';
-import 'package:medi_guard/core/theme/app_theme.dart';
-import 'package:medi_guard/core/theme/theme_provider.dart';
-import 'package:medi_guard/data/services/file_observer_channel.dart';
-import 'package:medi_guard/data/services/notification_service.dart';
-import 'package:medi_guard/data/services/scan_foreground_service.dart';
-import 'package:medi_guard/feature/media_bloc/presentation/views/permission_screen.dart';
-import 'package:medi_guard/feature/splash/presentation/view/splash_view.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -25,7 +25,7 @@ class AppBootstrapper {
 
     WidgetsFlutterBinding.ensureInitialized();
     FlutterForegroundTask.initCommunicationPort();
-
+    await SharePreferencesService.saveInstallDate();
     await Hive.initFlutter();
     await Future.wait([
       Hive.openBox('scanned_hashes'),
@@ -39,9 +39,6 @@ class AppBootstrapper {
     _compactIfNeeded('deleted_log', threshold: 50);
     _pruneOldHashes();
 
-    // ✅ طلب إذن Overlay عند أول فتح للتطبيق
-    await _requestOverlayPermission();
-
     final notificationService = ScanNotificationService();
     await notificationService.initialize();
 
@@ -54,12 +51,6 @@ class AppBootstrapper {
         FlutterForegroundTask.sendDataToTask(data);
       }
     });
-  }
-
-  static Future<void> _requestOverlayPermission() async {
-    if (!await Permission.systemAlertWindow.isGranted) {
-      await Permission.systemAlertWindow.request();
-    }
   }
 
   static void _compactIfNeeded(String boxName, {required int threshold}) {

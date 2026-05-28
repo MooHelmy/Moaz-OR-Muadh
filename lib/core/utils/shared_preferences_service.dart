@@ -22,7 +22,11 @@ class SharePreferencesService {
     final installDateString = prefs.getString('install_date');
 
     if (installDateString == null) {
-      return {'days': 0, 'minutes': 0};
+      return {
+        'days': 0,
+        'hours': 0,
+        'minutes': 0,
+      };
     }
 
     final installDate = DateTime.parse(installDateString);

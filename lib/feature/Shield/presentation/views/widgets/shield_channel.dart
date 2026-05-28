@@ -1,7 +1,7 @@
 import 'dart:developer';
 
+import 'package:Muadh/core/constants/keys.dart';
 import 'package:flutter/services.dart';
-import 'package:medi_guard/core/constants/keys.dart';
 
 class MaadhShieldManager {
   static const platform = MethodChannel('com.maadh.shield/vpn');

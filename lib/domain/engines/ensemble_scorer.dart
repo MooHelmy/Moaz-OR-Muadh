@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:medi_guard/data/services/face_service.dart';
-import 'package:medi_guard/data/services/nsfw_service.dart';
-import 'package:medi_guard/data/services/skin_service.dart';
+import 'package:Muadh/data/services/face_service.dart';
+import 'package:Muadh/data/services/nsfw_service.dart';
+import 'package:Muadh/data/services/skin_service.dart';
 
 class EnsembleScorer {
   final NsfwService nsfwService;
@@ -19,7 +19,7 @@ class EnsembleScorer {
   // لو NSFW أقل من 20% → صورة safe بوضوح → Face/Skin = 0
   // لو NSFW بين 20% و 50% → Face/Skin يضربوا بمعامل أقل
   // لو NSFW فوق 50% → Face/Skin يضربوا بكامل وزنهم
-  static const double _nsfwLowThreshold  = 0.20;
+  static const double _nsfwLowThreshold = 0.20;
   static const double _nsfwHighThreshold = 0.50;
 
   EnsembleScorer({
@@ -96,11 +96,11 @@ class ScoredResult {
   // ✅ FIX: أُزيل حقل path — ScoredResult لا يحتاج path بعد التحول لـ bytes
   final double weighted;
   final double nsfwScore;
-  final double faceScore;   // بعد تطبيق الـ amplifier
-  final double skinScore;   // بعد تطبيق الـ amplifier
+  final double faceScore; // بعد تطبيق الـ amplifier
+  final double skinScore; // بعد تطبيق الـ amplifier
   final double rawFaceScore; // قبل الـ amplifier
   final double rawSkinScore; // قبل الـ amplifier
-  final double amplifier;    // معامل تأثير Face/Skin (0.0 → 1.0)
+  final double amplifier; // معامل تأثير Face/Skin (0.0 → 1.0)
   final NsfwResult rawNsfw;
 
   const ScoredResult({

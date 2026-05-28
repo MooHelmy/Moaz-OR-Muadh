@@ -1,12 +1,12 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:async';
 
+import 'package:Muadh/feature/home/presentation/views/widgets/custom_home_header.dart';
+import 'package:Muadh/feature/home/presentation/views/widgets/custom_shield_counter.dart';
+import 'package:Muadh/feature/home/presentation/views/widgets/custom_top_bar.dart';
+import 'package:Muadh/feature/home/presentation/views/widgets/custom_verse_card.dart';
+import 'package:Muadh/feature/monitoring/presentation/view/widgets/custom_rank_card.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/home/presentation/views/widgets/custom_home_header.dart';
-import 'package:medi_guard/feature/home/presentation/views/widgets/custom_shield_counter.dart';
-import 'package:medi_guard/feature/home/presentation/views/widgets/custom_top_bar.dart';
-import 'package:medi_guard/feature/home/presentation/views/widgets/custom_verse_card.dart';
-import 'package:medi_guard/feature/monitoring/presentation/view/widgets/custom_rank_card.dart';
 
 class HomeViewBody extends StatefulWidget {
   const HomeViewBody({super.key});

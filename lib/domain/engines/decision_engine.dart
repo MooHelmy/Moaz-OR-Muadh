@@ -1,5 +1,5 @@
-import 'package:medi_guard/data/services/nsfw_service.dart';
-import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
+import 'package:Muadh/data/services/nsfw_service.dart';
+import 'package:Muadh/domain/engines/ensemble_scorer.dart';
 
 class DecisionEngine {
   double acceptThreshold;

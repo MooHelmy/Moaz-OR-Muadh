@@ -21,15 +21,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:Muadh/core/constants/scan_targets.dart';
+import 'package:Muadh/data/services/notification_service.dart';
+import 'package:Muadh/domain/deletion/delete_manager.dart';
+import 'package:Muadh/domain/engines/decision_engine.dart';
+import 'package:Muadh/domain/engines/ensemble_scorer.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:medi_guard/core/constants/scan_targets.dart';
-import 'package:medi_guard/data/services/notification_service.dart';
-import 'package:medi_guard/domain/deletion/delete_manager.dart';
-import 'package:medi_guard/domain/engines/decision_engine.dart';
-import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 const bool kDebugScan = kDebugMode;

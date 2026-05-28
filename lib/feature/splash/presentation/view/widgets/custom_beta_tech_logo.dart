@@ -1,7 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:Muadh/feature/splash/presentation/view/widgets/custom_tech_text.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_tech_text.dart';
 
 class CustomBetaTechLogo extends StatelessWidget {
   const CustomBetaTechLogo({
@@ -54,10 +54,10 @@ class CustomBetaTechLogo extends StatelessWidget {
                     //     0xFF29B6F6), // أزرق داكن للتدرج
                   ],
                 ).createShader(bounds),
-                child: Text('β', // Beta character
+                child: Text('Kin', // kin characters
 
                     style: TextStyle(
-                      fontSize: 120, // Adjust size as needed
+                      fontSize: 80, // Adjust size as needed
                       fontWeight: FontWeight.w900,
                       height: 1,
                     )),

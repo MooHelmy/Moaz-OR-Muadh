@@ -1,12 +1,12 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:Muadh/core/constants/keys.dart';
+import 'package:Muadh/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
+import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
+import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
+import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_service_card.dart';
+import 'package:Muadh/feature/Shield/presentation/views/widgets/shield_channel.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/core/constants/keys.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/custom_service_card.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/shield_channel.dart';
 
 class ShieldViewBody extends StatefulWidget {
   const ShieldViewBody({super.key});

@@ -2,13 +2,13 @@
 
 import 'dart:math';
 
+import 'package:Muadh/feature/Shield/presentation/views/widgets/main_tab_view.dart';
+import 'package:Muadh/feature/splash/data/model/particles_model.dart';
+import 'package:Muadh/feature/splash/presentation/view/widgets/custom_beta_tech_logo.dart';
+import 'package:Muadh/feature/splash/presentation/view/widgets/custom_grid_painter.dart';
+import 'package:Muadh/feature/splash/presentation/view/widgets/custom_orbit_ring.dart';
+import 'package:Muadh/feature/splash/presentation/view/widgets/custom_particles.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/Shield/presentation/views/widgets/main_tab_view.dart';
-import 'package:medi_guard/feature/splash/data/model/particles_model.dart';
-import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_beta_tech_logo.dart';
-import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_grid_painter.dart';
-import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_orbit_ring.dart';
-import 'package:medi_guard/feature/splash/presentation/view/widgets/custom_particles.dart';
 
 class SplashViewBody extends StatefulWidget {
   const SplashViewBody({super.key, required this.showAccessibilityOnboarding});

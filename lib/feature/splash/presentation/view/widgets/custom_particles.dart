@@ -2,8 +2,8 @@
 
 import 'dart:math';
 
+import 'package:Muadh/feature/splash/data/model/particles_model.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/splash/data/model/particles_model.dart';
 
 class ParticlePainter extends CustomPainter {
   final List<Particle> particles;

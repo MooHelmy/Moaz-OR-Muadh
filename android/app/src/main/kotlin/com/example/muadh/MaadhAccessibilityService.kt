@@ -37,12 +37,16 @@ class MaadhAccessibilityService : AccessibilityService() {
         private val TOLERANT_PACKAGES = setOf(
             "com.whatsapp", "com.whatsapp.w4b",
             "com.facebook.orca",
+            "com.facebook.mlite",
+            "com.facebook.katana",
             "org.telegram.messenger", "org.telegram.plus",
             "com.instagram.android",
             "com.twitter.android",
             "com.snapchat.android",
             "com.viber.voip",
             "com.skype.raider",
+            "com.google.android.apps.messaging", // تطبيق الرسائل من جوجل
+            "com.google.android.gm", // Gmail
             "com.discord",
             "com.tencent.mm",
             "jp.naver.line.android",

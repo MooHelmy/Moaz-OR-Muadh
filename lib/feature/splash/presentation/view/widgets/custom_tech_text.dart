@@ -25,7 +25,7 @@ class TechTex extends StatelessWidget {
                 Text(
                   text[i],
                   style: TextStyle(
-                    fontSize: 62,
+                    fontSize: 50,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -2.5,
                     foreground: Paint()
@@ -39,7 +39,7 @@ class TechTex extends StatelessWidget {
                 Text(
                   text[i],
                   style: TextStyle(
-                    fontSize: 62,
+                    fontSize: 50,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -2.5,
                     color: Colors.white,

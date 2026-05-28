@@ -1,7 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:Muadh/feature/monitoring/presentation/view/widgets/monitoring_view_body.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/feature/monitoring/presentation/view/widgets/monitoring_view_body.dart';
 
 class MonitoringView extends StatelessWidget {
   const MonitoringView({super.key});

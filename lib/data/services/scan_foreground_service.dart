@@ -9,20 +9,20 @@
 //  مفيش WorkManager — مش محتاجينه
 // ══════════════════════════════════════════════════════════════════════════════
 
+import 'package:Muadh/core/constants/scan_targets.dart';
+import 'package:Muadh/data/services/face_service.dart';
+import 'package:Muadh/data/services/file_observer_channel.dart';
+import 'package:Muadh/data/services/notification_service.dart';
+import 'package:Muadh/data/services/nsfw_service.dart';
+import 'package:Muadh/data/services/skin_service.dart';
+import 'package:Muadh/domain/deletion/delete_manager.dart';
+import 'package:Muadh/domain/engines/decision_engine.dart';
+import 'package:Muadh/domain/engines/ensemble_scorer.dart';
+import 'package:Muadh/domain/scanning/smart_scan_queue.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:medi_guard/core/constants/scan_targets.dart';
-import 'package:medi_guard/data/services/face_service.dart';
-import 'package:medi_guard/data/services/file_observer_channel.dart';
-import 'package:medi_guard/data/services/notification_service.dart';
-import 'package:medi_guard/data/services/nsfw_service.dart';
-import 'package:medi_guard/data/services/skin_service.dart';
-import 'package:medi_guard/domain/deletion/delete_manager.dart';
-import 'package:medi_guard/domain/engines/decision_engine.dart';
-import 'package:medi_guard/domain/engines/ensemble_scorer.dart';
-import 'package:medi_guard/domain/scanning/smart_scan_queue.dart';
 
 // ── MediaStore channel — يُستخدم من onRepeatEvent (main isolate) فقط ─────────
 const _mediaStoreChannel = MethodChannel('medi_guard/media_store');
@@ -59,6 +59,9 @@ class ScanServiceManager {
   static Future<void> start() async {
     // طلب استثناء من Battery Optimization عشان الـ service ميتقتلش
     await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+    // طلب استثناء من Battery Optimization في الخلفية دون انتظار (await)
+    // لضمان عدم تعطيل الانتقال بين الشاشات في حال فتح حوار نظام
+    FlutterForegroundTask.requestIgnoreBatteryOptimization();
 
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.restartService();

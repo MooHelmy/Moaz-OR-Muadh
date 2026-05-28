@@ -1,6 +1,6 @@
+import 'package:Muadh/core/utils/shared_preferences_service.dart';
+import 'package:Muadh/feature/monitoring/presentation/view/widgets/custom_detailed_timer.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/core/utils/shared_preferences_service.dart';
-import 'package:medi_guard/feature/monitoring/presentation/view/widgets/custom_detailed_timer.dart';
 
 class CustomDetailsTimerFutureBuilder extends StatelessWidget {
   const CustomDetailsTimerFutureBuilder({super.key});

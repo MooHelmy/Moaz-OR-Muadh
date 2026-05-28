@@ -1,5 +1,5 @@
+import 'package:Muadh/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
-import 'package:medi_guard/core/theme/app_colors.dart';
 
 class AppThemeDark {
   static ThemeData get theme {

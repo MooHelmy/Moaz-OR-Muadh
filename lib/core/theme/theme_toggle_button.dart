@@ -1,6 +1,6 @@
+import 'package:Muadh/core/theme/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medi_guard/core/theme/theme_provider.dart';
 
 class ThemeToggleButton extends ConsumerWidget {
   const ThemeToggleButton({super.key});

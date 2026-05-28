@@ -10,14 +10,14 @@
 
 import 'dart:async';
 
+import 'package:Muadh/core/constants/scan_targets.dart';
+import 'package:Muadh/domain/scanning/smart_scan_queue.dart';
 import 'package:flutter/services.dart';
-import 'package:medi_guard/core/constants/scan_targets.dart';
-import 'package:medi_guard/domain/scanning/smart_scan_queue.dart';
 
 class MediaStorePoller {
-  static const _channel      = MethodChannel('medi_guard/media_store');
+  static const _channel = MethodChannel('medi_guard/media_store');
   static const _pollInterval = Duration(minutes: 5);
-  static const _recentLimit  = 20;
+  static const _recentLimit = 20;
 
   Timer? _timer;
   SmartScanQueue? _queue;
@@ -30,12 +30,13 @@ class MediaStorePoller {
   void start(SmartScanQueue queue) {
     if (_running) return;
     _running = true;
-    _queue   = queue;
+    _queue = queue;
 
     // ابدأ من آخر 10 دقايق عشان نكتشف الملفات اللي جت أثناء الـ startup
     _lastCheck = DateTime.now()
-        .subtract(const Duration(minutes: 10))
-        .millisecondsSinceEpoch ~/ 1000;
+            .subtract(const Duration(minutes: 10))
+            .millisecondsSinceEpoch ~/
+        1000;
 
     // أول poll بعد 30 ث من الـ start
     Timer(const Duration(seconds: 30), () {
@@ -49,8 +50,8 @@ class MediaStorePoller {
   void stop() {
     _running = false;
     _timer?.cancel();
-    _timer  = null;
-    _queue  = null;
+    _timer = null;
+    _queue = null;
   }
 
   // ─── Poll يدوي (عند app resume أو من onRepeatEvent) ───────────────────────
@@ -68,7 +69,7 @@ class MediaStorePoller {
         'getRecentMedia',
         {
           'sinceTimestamp': _lastCheck,
-          'limit'         : _recentLimit,
+          'limit': _recentLimit,
         },
       );
 
@@ -77,10 +78,8 @@ class MediaStorePoller {
 
       if (result == null || result.isEmpty) return;
 
-      final paths = result
-          .whereType<String>()
-          .where(ScanTargets.isMediaFile)
-          .toList();
+      final paths =
+          result.whereType<String>().where(ScanTargets.isMediaFile).toList();
 
       if (paths.isNotEmpty) {
         _queue!.addBatch(paths, priority: ScanPriority.high);
