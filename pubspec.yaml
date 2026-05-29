@@ -1,6 +1,6 @@
 name: Muadh
 description: AI Media Guard - Auto Background Scanner
-
+version: 1.0.0+1
 environment:
   # workmanager 0.7.0 يتطلب Dart >=3.2 — نرفع الحد الأدنى
   sdk: '>=3.2.0 <4.0.0'

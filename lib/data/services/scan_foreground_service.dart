@@ -146,7 +146,8 @@ class ScanTaskHandler extends TaskHandler {
 
     // كل 5 دقايق → MediaStore poll
     // onRepeatEvent بيشتغل على main isolate → الـ channel شغّال
-    if (_repeatCount % 5 == 0) {
+    if (_repeatCount % 1 == 0) {
+      // أو ببساطة قم بإزالة الشرط لتشغيله كل دقيقة
       _pollMediaStore();
     }
   }
@@ -210,7 +211,7 @@ class ScanTaskHandler extends TaskHandler {
         'getRecentMedia',
         {
           'sinceTimestamp': _lastMediaPollTs,
-          'limit': 30,
+          'limit': 50,
         },
       );
 

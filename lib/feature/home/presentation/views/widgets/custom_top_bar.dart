@@ -19,7 +19,7 @@ class CustomTopBar extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Tooltip(
-            message: 'βTech\nTap for see website',
+            message: 'KinTech\n Soon see Our website',
             showDuration: const Duration(seconds: 3),
             textStyle: const TextStyle(
               color: Colors.white,
@@ -48,7 +48,7 @@ class CustomTopBar extends ConsumerWidget {
               ),
               padding: const EdgeInsets.all(8),
               child: Text(
-                'β',
+                'K',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,

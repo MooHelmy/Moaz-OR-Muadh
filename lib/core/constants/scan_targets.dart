@@ -31,6 +31,7 @@ class ScanTargets {
 
     // ─── مشاركة ملفات ─────────────────────────────────────────
     '/storage/emulated/0/Shareit',
+    '/storage/emulated/0/SHAREit',
     '/storage/emulated/0/Xender',
   ];
 

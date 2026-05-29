@@ -54,8 +54,10 @@ class SmartScanQueue {
   final _normalQ = <String>[];
 
   // dedup: لا نفحص نفس الملف مرتين في نفس الجلسة
+  // ✅ FIX: _sessionSeen يخزن hashes مش paths
+  // السبب: ملف بنفس الاسم ومحتوى مختلف → path نفسه بس hash مختلف
   final _pending = <String>{};
-  final _sessionSeen = <String>{};
+  final _sessionSeen = <String>{}; // hashes
 
   int _activeWorkers = 0;
   int _maxWorkers;
@@ -83,7 +85,7 @@ class SmartScanQueue {
   void add(String path, {ScanPriority priority = ScanPriority.normal}) {
     if (_cancelled) return;
     if (_pending.contains(path)) return;
-    if (_sessionSeen.contains(path)) return;
+    // ✅ FIX: شيلنا الـ path check — الـ dedup صار بالـ hash جوا _processImage/_processVideo
     if (!ScanTargets.isMediaFile(path)) return;
 
     _pending.add(path);
@@ -179,7 +181,8 @@ class SmartScanQueue {
 
         final (path, priority) = item;
         _pending.remove(path);
-        _sessionSeen.add(path);
+        // ✅ FIX: مش بنضيف path للـ sessionSeen هنا
+        // الـ _sessionSeen.add(hash) بيحصل بعد حساب الـ hash في _processImage/_processVideo
 
         try {
           await _processFile(path, priority: priority);
@@ -219,8 +222,8 @@ class SmartScanQueue {
     if (stat.size > 50 * 1024 * 1024) return; // > 50MB → تجاهل
 
     final hash = await _partialHash(file);
-    final box = Hive.box('scanned_hashes');
-    if (box.get(hash) != null) return; // سبق فحصه
+
+    _sessionSeen.add(hash); // احجز الـ hash قبل الفحص (منع race بين workers)
 
     final bytes = await file.readAsBytes();
     final scored = await scorer.score(bytes);
@@ -248,9 +251,9 @@ class SmartScanQueue {
       }
     }
 
-    await box.put(hash, 1);
     await _compactIfNeeded();
     _countMetric(priority);
+    _sessionSeen.remove(path);
   }
 
   // ─── VIDEO ────────────────────────────────────────────────────────────────
@@ -259,9 +262,8 @@ class SmartScanQueue {
     final file = File(path);
     if (!await file.exists()) return;
 
-    final hash = await _partialHash(file);
-    final box = Hive.box('scanned_hashes');
-    if (box.get(hash) != null) return; // سبق فحصه
+    if (_sessionSeen.contains(path)) return;
+    _sessionSeen.add(path);
 
     // ─── Duration via binary search (بدل native channel) ──────────────────
     final durationMs = await _estimateDuration(path);
@@ -356,9 +358,9 @@ class SmartScanQueue {
       }
     }
 
-    await box.put(hash, 1);
     await _compactIfNeeded();
     _countMetric(priority);
+    _sessionSeen.remove(path);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
