@@ -1,12 +1,15 @@
 // ignore_for_file: deprecated_member_use
 
-import 'package:Muadh/core/constants/keys.dart';
+import 'dart:math';
+
+import 'package:Muadh/core/utils/pin_security_service.dart';
 import 'package:Muadh/feature/Shield/presentation/views/widgets/accessibility_dialog.dart';
 import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_section_titel.dart';
 import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_security_hint.dart';
 import 'package:Muadh/feature/Shield/presentation/views/widgets/custom_service_card.dart';
 import 'package:Muadh/feature/Shield/presentation/views/widgets/shield_channel.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ShieldViewBody extends StatefulWidget {
   const ShieldViewBody({super.key});
@@ -47,6 +50,15 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
     final antiUninstallStatus =
         await MaadhShieldManager.isAntiUninstallActive();
 
+    // التحقق من وجود الرمز السري الرئيسي أو إنشاؤه بصمت
+    final prefs = await SharedPreferences.getInstance();
+    if (!PinSecurityService.hasMasterPin(prefs)) {
+      // توليد رمز عشوائي من 6 أرقام (من 100000 إلى 999999)
+      final randomPin = (Random().nextInt(900000) + 100000).toString();
+      await PinSecurityService.saveMasterPin(prefs, randomPin);
+      // ملاحظة: الرمز تم حفظه مشفراً ولن يظهر لأي أحد
+    }
+
     if (mounted) {
       setState(() {
         isAccessibilityActive = accessibilityStatus;
@@ -78,10 +90,12 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
             title: "تأكيد الهوية",
             description: "أدخل الرمز السري لإدارة إعدادات الحماية",
             icon: Icons.lock_person_rounded,
-            maxLength: 4, // Assuming KAccessibility is a 4-digit PIN
-            hintText: "••••",
-            onConfirm: (pin) {
-              if (pin == KAccessibility) {
+            maxLength: 6,
+            hintText: "• • • • • •",
+            onConfirm: (pin) async {
+              final prefs = await SharedPreferences.getInstance();
+              // التحقق من الرمز المدخل مقابل الرمز العشوائي المخزن مشفراً
+              if (PinSecurityService.verifyMasterPin(prefs, pin)) {
                 Navigator.pop(context, true);
               } else {
                 _showSnackBar("رمز خاطئ! لا يمكن تعديل الإعدادات.",
