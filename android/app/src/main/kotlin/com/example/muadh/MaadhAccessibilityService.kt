@@ -68,11 +68,8 @@ class MaadhAccessibilityService : AccessibilityService() {
 
         private const val DEDUP_TTL_MS         = 30_000L
         private const val SHORT_WORD_MIN_LENGTH = 5
-        private const val NOTIF_CHANNEL_ID      = "maadh_shield_channel"
-        private const val NOTIF_ID_WARNING      = 1001
-        private const val NOTIF_ID_BLOCK        = 1003
-        private const val NOTIF_ID_SUCCESS      = 1004
-        
+        private const val NOTIF_CHANNEL_ID      = "maadh_warnings"
+        private const val WARN_CHANNEL_ID       = "maadh_alerts"    // ← channel التحذيرات المنفصلة
         private const val MAX_STRIKES           = 3
         private const val WORD_REPEAT_THRESHOLD = 3
 
@@ -86,7 +83,6 @@ class MaadhAccessibilityService : AccessibilityService() {
         private const val WATCH_INTERVAL_MS     = 1_000L
     }
 
-    private var warningCancelRunnable: Runnable? = null
     private val recentlySent      = LinkedHashMap<String, Long>()
     private var lastSeenFileName  : String? = null
     private var lastFallbackMs    : Long    = 0L
@@ -215,7 +211,7 @@ class MaadhAccessibilityService : AccessibilityService() {
             Log.d(TAG, "⏱️ [5min] انتهى وقت المراقبة — reset إجباري لـ $pkg")
             doReset(pkg)
             showWarningNotification(
-                id    = NOTIF_ID_SUCCESS,
+                id    = 1004,
                 title = "✅ يمكنك الرجوع الآن",
                 body  = "انتهت مدة الإغلاق. ارجع للمحادثة وتأكد من مسح الكلمات غير اللائقة."
             )
@@ -248,13 +244,11 @@ class MaadhAccessibilityService : AccessibilityService() {
             if (!stillPresent) {
                 Log.d(TAG, "✅ [Watch] الكلمات اتمسحت في $pkg — reset")
                 doReset(pkg)
-                // امسح إشعارات الحجب والتحذير القديمة
-                NotificationManagerCompat.from(this).cancel(NOTIF_ID_BLOCK)
-                NotificationManagerCompat.from(this).cancel(NOTIF_ID_WARNING)
-                
+                // ✅ FIX: امسح كل إشعارات التحذير مش بس 1003
+                cancelAllWarningNotifications()
                 // بعت إشعار "تم المسح"
                 showWarningNotification(
-                    id    = NOTIF_ID_SUCCESS,
+                    id    = 1004,
                     title = "✅ تم المسح — يمكنك الرجوع",
                     body  = "تم اكتشاف مسح الكلمات غير اللائقة. يمكنك الرجوع للمحادثة."
                 )
@@ -274,11 +268,18 @@ class MaadhAccessibilityService : AccessibilityService() {
         strikeCount.remove(pkg)
         seenMessageTexts.remove(pkg)
         wordSeenCount.keys.removeIf { it.startsWith("$pkg|") }
-        // إلغاء أي مؤقت شغال لإخفاء الإشعار عند عمل ريست
-        warningCancelRunnable?.let { mainHandler.removeCallbacks(it) }
-        NotificationManagerCompat.from(this).cancel(NOTIF_ID_WARNING)
         lastStrikeTimeMs = 0L
+        // ✅ FIX: امسح كل إشعارات التحذير (1001, 1002, 1004) مش بس 1003
+        cancelAllWarningNotifications()
         Log.d(TAG, "🔄 [Reset] تم reset $pkg")
+    }
+
+    private fun cancelAllWarningNotifications() {
+        val nm = NotificationManagerCompat.from(this)
+        nm.cancel(1001)   // تحذير 1/3
+        nm.cancel(1002)   // تحذير 2/3
+        nm.cancel(1003)   // إشعار الحجب
+        nm.cancel(1004)   // تم المسح
     }
 
     private fun stopWatching() {
@@ -365,10 +366,6 @@ class MaadhAccessibilityService : AccessibilityService() {
 
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
         if (today != (lastStrikeDay[pkg] ?: -1)) {
-            // إذا كان يومًا جديدًا، أعد تعيين عدد المخالفات وألغِ أي إشعار تحذير معلق
-            if (strikeCount.containsKey(pkg)) {
-                NotificationManagerCompat.from(this).cancel(NOTIF_ID_WARNING)
-            }
             strikeCount.remove(pkg)
             lastStrikeDay[pkg] = today
         }
@@ -389,23 +386,11 @@ class MaadhAccessibilityService : AccessibilityService() {
         Log.d(TAG, "⚡ [Strike $strikes/$MAX_STRIKES] '$word' في $pkg")
 
         when (strikes) {
-            1, 2 -> {
-                val title = if (strikes == 1) "⚠️ تحذير 1/3" else "🚨 تحذير 2/3"
-                val body = if (strikes == 1) "تم رصد كلمة غير لائقة في المحادثة." else "آخر تحذير! المخالفة التالية ستغلق المحادثة."
-                
-                showWarningNotification(NOTIF_ID_WARNING, title, body)
-
-                // ⏳ مؤقت لحذف الإشعار فقط بعد 60 ثانية دون تصفير العداد
-                warningCancelRunnable?.let { mainHandler.removeCallbacks(it) }
-                warningCancelRunnable = Runnable {
-                    Log.d(TAG, "⏰ إخفاء إشعار التحذير تلقائياً بعد دقيقة")
-                    NotificationManagerCompat.from(this).cancel(NOTIF_ID_WARNING)
-                }
-                mainHandler.postDelayed(warningCancelRunnable!!, 60_000L)
-            }
+            1 -> showWarningNotification(1001, "⚠️ تحذير 1/3",
+                    "تم رصد كلمة غير لائقة في المحادثة.")
+            2 -> showWarningNotification(1002, "🚨 تحذير 2/3",
+                    "آخر تحذير! المخالفة التالية ستغلق المحادثة.")
             else -> {
-                // قبل الحجب، امسح إشعار التحذير (1001) ليحل محله إشعار الحجب (1003)
-                NotificationManagerCompat.from(this).cancel(NOTIF_ID_WARNING)
                 saveBlockLog(word)
                 sendBroadcast(Intent("com.maadh.shield.BLOCKED_EVENT").apply {
                     putExtra("word", word)
@@ -431,7 +416,6 @@ class MaadhAccessibilityService : AccessibilityService() {
         // 2. إشعار ongoing
         val appName = getAppName(pkg)
         showBlockNotification(
-            id    = NOTIF_ID_BLOCK,
             title = "🚫 تم إغلاق $appName",
             body  = "وجدنا كلمات غير لائقة.\nافتح المحادثة وامسح الكلمات — الخدمة ستكتشف المسح تلقائياً."
         )
@@ -614,10 +598,10 @@ class MaadhAccessibilityService : AccessibilityService() {
     // ══════════════════════════════════════════════════════════════════════════
     //  Notifications
     // ══════════════════════════════════════════════════════════════════════════
-    private fun showBlockNotification(id: Int, title: String, body: String) {
+    private fun showBlockNotification(title: String, body: String) {
         try {
-            val notif = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            val notif = NotificationCompat.Builder(this, WARN_CHANNEL_ID)   // ← channel التحذيرات
+                .setSmallIcon(R.mipmap.icon)                   // ← أيقونة تطبيقك
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -626,7 +610,7 @@ class MaadhAccessibilityService : AccessibilityService() {
                 .setAutoCancel(false)
                 .setOngoing(true)
                 .build()
-            NotificationManagerCompat.from(this).notify(id, notif)
+            NotificationManagerCompat.from(this).notify(1003, notif)
         } catch (e: Exception) {
             Log.e(TAG, "❌ فشل إشعار الحجب: ${e.message}")
         }
@@ -634,8 +618,8 @@ class MaadhAccessibilityService : AccessibilityService() {
 
     private fun showWarningNotification(id: Int, title: String, body: String) {
         try {
-            val notif = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            val notif = NotificationCompat.Builder(this, WARN_CHANNEL_ID)   // ← channel التحذيرات
+                .setSmallIcon(R.mipmap.icon)                   // ← أيقونة تطبيقك
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -651,11 +635,26 @@ class MaadhAccessibilityService : AccessibilityService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIF_CHANNEL_ID, "تحذيرات الحارس", NotificationManager.IMPORTANCE_HIGH
-            ).apply { description = "تحذيرات المحتوى غير اللائق" }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // channel الخدمة الأساسية — IMPORTANCE_LOW عشان ميعملش صوت
+            val serviceChannel = NotificationChannel(
+                NOTIF_CHANNEL_ID, "الحارس الذكي", NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "خدمة الحماية في الخلفية"
+                setShowBadge(false)
+            }
+
+            // channel التحذيرات — منفصل تماماً عن إشعار الخدمة
+            val warnChannel = NotificationChannel(
+                WARN_CHANNEL_ID, "تحذيرات المحتوى", NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "تحذيرات المحتوى غير اللائق"
+                setShowBadge(true)
+            }
+
+            manager.createNotificationChannel(serviceChannel)
+            manager.createNotificationChannel(warnChannel)
         }
     }
 
