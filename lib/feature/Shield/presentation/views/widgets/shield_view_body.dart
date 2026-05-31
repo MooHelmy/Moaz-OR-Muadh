@@ -220,7 +220,7 @@ class _ShieldViewBodyState extends State<ShieldViewBody>
         // ── Accessibility Card ───────────────────────────────
         CustomServiceCard(
           title: "الحارس الذكي (Accessibility)",
-          desc: "مراقبة الكلمات والمحتوى المباشر",
+          desc: " الكلمات والمحتوى ",
           icon: Icons.remove_red_eye_rounded,
           isActive: isAccessibilityActive,
           onChanged: (value) async {

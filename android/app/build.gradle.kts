@@ -1,4 +1,6 @@
 // android/app/build.gradle.kts  (APP)
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -6,9 +8,14 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+
 android {
     namespace = "com.example.muadh"
-    // ✅ 36 مطلوب من shared_preferences_android
     compileSdk = 36
 
     ndkVersion = "28.2.13676358"
@@ -26,15 +33,24 @@ android {
     defaultConfig {
         applicationId = "com.example.muadh"
         minSdk = 24
-        // ✅ targetSdk = 35 (مش 36) عشان لا تحتاج صلاحيات API 36 الجديدة
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

@@ -1,28 +1,29 @@
 # ═══════════════════════════════════════════════════════
-# Flutter
+# Flutter Core — الحد الأدنى المطلوب
 # ═══════════════════════════════════════════════════════
--keep class io.flutter.** { *; }
--keep class io.flutter.plugins.** { *; }
--dontwarn io.flutter.**
+-keep class io.flutter.app.** { *; }
+-keep class io.flutter.plugin.**  { *; }
+-keep class io.flutter.util.**  { *; }
+-keep class io.flutter.view.**  { *; }
+-keep class io.flutter.**  { *; }
+-keep class io.flutter.plugins.**  { *; }
+-dontwarn io.flutter.embedding.**
 
 # ═══════════════════════════════════════════════════════
-# ✅ Fix: R8 "Missing class" — Play Core (Flutter Deferred Components)
-# هذه المكتبة اختيارية في Flutter، R8 بيشتكي منها لو مش موجودة
-# الحل: نقوله تجاهلها بدل ما يوقف البناء
+# Play Core (Flutter Deferred Components)
 # ═══════════════════════════════════════════════════════
 -dontwarn com.google.android.play.core.**
--keep class com.google.android.play.core.** { *; }
--keepclassmembers class com.google.android.play.core.** { *; }
 
 # ═══════════════════════════════════════════════════════
-# ✅ Fix: R8 "Missing class" — TensorFlow Lite GPU Delegate
-# GpuDelegateFactory$Options مش موجودة في الـ TFLite المستخدم
+# TensorFlow Lite / ONNX Runtime
 # ═══════════════════════════════════════════════════════
+-keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.**
--keep class org.tensorflow.** { *; }
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
 
 # ═══════════════════════════════════════════════════════
-# Firebase
+# Firebase — الكلاسات المستخدمة فعلياً فقط
 # ═══════════════════════════════════════════════════════
 -keep class com.google.firebase.** { *; }
 -keep class com.google.android.gms.** { *; }
@@ -39,16 +40,10 @@
 }
 
 # ═══════════════════════════════════════════════════════
-# ONNX Runtime
-# ═══════════════════════════════════════════════════════
--keep class ai.onnxruntime.** { *; }
--dontwarn ai.onnxruntime.**
-
-# ═══════════════════════════════════════════════════════
 # WorkManager
 # ═══════════════════════════════════════════════════════
 -keep class androidx.work.** { *; }
--keep class * extends androidx.work.Worker { *; }
+-keep class * extends androidx.work.Worker
 -keep class * extends androidx.work.ListenableWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
@@ -61,18 +56,19 @@
 -dontwarn com.pravera.flutter_foreground_task.**
 
 # ═══════════════════════════════════════════════════════
-# ML Kit
+# ML Kit Face Detection
 # ═══════════════════════════════════════════════════════
 -keep class com.google.mlkit.** { *; }
 -keep class com.google_mlkit_face_detection.** { *; }
 -dontwarn com.google.mlkit.**
 
 # ═══════════════════════════════════════════════════════
-# Kotlin
+# Kotlin — الحد الأدنى فقط (مش كل شيء)
 # ═══════════════════════════════════════════════════════
--keep class kotlin.** { *; }
--keep class kotlinx.** { *; }
 -dontwarn kotlin.**
+-dontwarn kotlinx.**
+-keep class kotlin.Metadata { *; }
+-keep class kotlin.reflect.** { *; }
 
 # ═══════════════════════════════════════════════════════
 # General Android
@@ -80,3 +76,8 @@
 -keepattributes *Annotation*
 -keepattributes SourceFile,LineNumberTable
 -keep public class * extends java.lang.Exception
+
+# ═══════════════════════════════════════════════════════
+# R8 Full Mode — تجاهل تحذيرات الكلاسات الغائبة
+# ═══════════════════════════════════════════════════════
+-ignorewarnings

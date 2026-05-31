@@ -9,12 +9,15 @@ class ScanNotificationService {
   int _deleteCount = 0;
 
   Future<void> initialize() async {
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    try {
+      const androidSettings = AndroidInitializationSettings('ic_launcher');
 
-    await _plugin.initialize(
-      const InitializationSettings(android: androidSettings),
-    );
+      await _plugin.initialize(
+        const InitializationSettings(android: androidSettings),
+      );
+    } catch (e) {
+      debugPrint('فشل تهيئة الإشعارات: $e');
+    }
   }
 
   /// يظهر إشعار بس لما فيه حذف فعلي
@@ -25,7 +28,8 @@ class ScanNotificationService {
 
     // ─── إشعار فردي للملف المحذوف ──────────────────────────────
     await _plugin.show(
-      _deleteCount % 8999, // ✅ FIX: cap الـ ID عشان ما يتجاوزش الـ _summaryId=9000
+      _deleteCount %
+          8999, // ✅ FIX: cap الـ ID عشان ما يتجاوزش الـ _summaryId=9000
       '🛡️ معاذ — تم الحذف',
       'تم حذف "$fileName"',
       NotificationDetails(

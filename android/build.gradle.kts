@@ -16,13 +16,14 @@ allprojects {
     }
 }
 
-// ✅ Fix: compileSdk = 36 لكل المكتبات
-// بنستخدم allprojects بدل subprojects + afterEvaluate
-// عشان afterEvaluate بيتعارض مع evaluationDependsOn(:app)
-allprojects {
-    plugins.withId("com.android.library") {
-        extensions.configure(com.android.build.gradle.LibraryExtension::class) {
-            compileSdk = 36
+// ✅ Fix: compileSdk = 36 لكل المكتبات عن طريق subprojects + afterEvaluate
+subprojects {
+    afterEvaluate {
+        if (project.hasProperty("android")) {
+            val androidExt = project.extensions.findByName("android")
+            if (androidExt is com.android.build.gradle.LibraryExtension) {
+                androidExt.compileSdk = 36
+            }
         }
     }
 }
