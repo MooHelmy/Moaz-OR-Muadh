@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,14 +12,54 @@ class PermissionScreen extends StatefulWidget {
   State<PermissionScreen> createState() => _PermissionScreenState();
 }
 
-class _PermissionScreenState extends State<PermissionScreen> {
+class _PermissionScreenState extends State<PermissionScreen>
+    with WidgetsBindingObserver {
   bool _loading = true;
-  bool _requesting = false; // ← منع double-tap أو double-call
+  bool _requesting = false;
+  bool _waitingForSettingsReturn = false;
+
+  // ✅ نحفظ الـ SDK version مرة واحدة
+  int _sdkInt = 0;
 
   @override
   void initState() {
     super.initState();
-    _checkIfAlreadyGranted();
+    WidgetsBinding.instance.addObserver(this);
+    _init();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    // نجيب الـ SDK version
+    _sdkInt = await _getAndroidSdk();
+    await _checkIfAlreadyGranted();
+  }
+
+  Future<int> _getAndroidSdk() async {
+    try {
+      // طريقة بسيطة بدون package إضافية
+      final result = await Process.run('getprop', ['ro.build.version.sdk']);
+      return int.tryParse(result.stdout.toString().trim()) ?? 30;
+    } catch (_) {
+      return 30; // fallback آمن
+    }
+  }
+
+  // ✅ تحديد الـ permissions المطلوبة حسب الـ SDK
+  bool get _needsManageStorage => _sdkInt >= 30; // Android 11+
+  bool get _needsMediaPermissions => _sdkInt >= 33; // Android 13+
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForSettingsReturn) {
+      _waitingForSettingsReturn = false;
+      _continueAfterManageStorageSettings();
+    }
   }
 
   Future<void> _checkIfAlreadyGranted() async {
@@ -25,9 +67,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
     final alreadyGranted = prefs.getBool('permissions_granted') ?? false;
 
     if (alreadyGranted) {
-      final storageOk = await Permission.manageExternalStorage.isGranted ||
-          await Permission.storage.isGranted;
-
+      final storageOk = await _isStorageGranted();
       if (storageOk && mounted) {
         final showOnboarding =
             !(prefs.getBool('accessibility_onboarding_shown') ?? false);
@@ -42,53 +82,136 @@ class _PermissionScreenState extends State<PermissionScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  // ✅ يتحقق من الـ storage بكل الطرق الممكنة حسب الـ SDK
+  Future<bool> _isStorageGranted() async {
+    // Android 11+ → MANAGE_EXTERNAL_STORAGE
+    if (_needsManageStorage) {
+      if (await Permission.manageExternalStorage.isGranted) return true;
+    }
+    // Android 13+ → READ_MEDIA_IMAGES / VIDEO
+    if (_needsMediaPermissions) {
+      if (await Permission.photos.isGranted ||
+          await Permission.videos.isGranted) return true;
+    }
+    // Android 10 وأقل → READ_EXTERNAL_STORAGE
+    if (await Permission.storage.isGranted) return true;
+
+    return false;
+  }
+
   Future<void> _requestAll() async {
-    // منع التنفيذ المزدوج
     if (_requesting) return;
     setState(() => _requesting = true);
 
     try {
-      // ✅ نطلب الصلاحيات واحدة واحدة مع await كامل بينهم
-      // manageExternalStorage أولاً لأنها الأهم
-      if (await Permission.manageExternalStorage.isDenied) {
-        await Permission.manageExternalStorage.request();
-        // ننتظر شوية عشان Android يستقر بعد الـ dialog
-        await Future.delayed(const Duration(milliseconds: 300));
+      if (_needsManageStorage) {
+        // ─── Android 11+ ──────────────────────────────────────────────────
+        // MANAGE_EXTERNAL_STORAGE بتفتح Settings خارجية
+        // Samsung/Huawei بيعملوا Activity recreation لما ترجع
+        if (await Permission.manageExternalStorage.isDenied) {
+          _waitingForSettingsReturn = true;
+          await Permission.manageExternalStorage.request();
+
+          // بعض الأجهزة بترد فوراً (emulators/Pixel)
+          await Future.delayed(const Duration(milliseconds: 600));
+
+          // لو لسه بنستنى → didChangeAppLifecycleState هيكمل
+          if (_waitingForSettingsReturn) return;
+        } else {
+          await _continueAfterManageStorageSettings();
+        }
+      } else {
+        // ─── Android 10 وأقل ───────────────────────────────────────────────
+        await _requestLegacyStorage();
+      }
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  Future<void> _continueAfterManageStorageSettings() async {
+    try {
+      final manageGranted = await Permission.manageExternalStorage.isGranted;
+
+      if (!manageGranted) {
+        // ✅ FIX: لو MANAGE_EXTERNAL_STORAGE اترفضت (emulator / no Play Store)
+        // نحاول fallback لـ READ_MEDIA أو READ_EXTERNAL_STORAGE بدل كراش
+        debugPrint('MANAGE_EXTERNAL_STORAGE denied → trying fallback');
+        await _requestFallbackStorage();
+        return;
       }
 
-      if (await Permission.storage.isDenied) {
+      await _requestNotificationAndFinish();
+    } catch (e) {
+      debugPrint('Continue after settings error: $e');
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  // ✅ Fallback: Android 13+ → READ_MEDIA، أقل → READ_EXTERNAL_STORAGE
+  Future<void> _requestFallbackStorage() async {
+    try {
+      if (_needsMediaPermissions) {
+        // Android 13+ 
+        await Permission.photos.request();
+        await Future.delayed(const Duration(milliseconds: 300));
+        await Permission.videos.request();
+        await Future.delayed(const Duration(milliseconds: 300));
+      } else {
+        // Android 11-12
         await Permission.storage.request();
         await Future.delayed(const Duration(milliseconds: 300));
       }
 
-      if (await Permission.notification.isDenied) {
-        await Permission.notification.request();
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-
-      final storageGranted = await Permission.manageExternalStorage.isGranted ||
-          await Permission.storage.isGranted;
-
-      if (!mounted) return;
-
-      if (storageGranted) {
-        final prefs = await SharedPreferences.getInstance();
-        final alreadyShown =
-            prefs.getBool('accessibility_onboarding_shown') ?? false;
-        final showOnboarding = !alreadyShown;
-
-        await prefs.setBool('permissions_granted', true);
-        if (showOnboarding) {
-          await prefs.setBool('accessibility_onboarding_shown', true);
-        }
-
-        widget.onGranted(showOnboarding);
-      } else {
-        // المستخدم رفض — افتح الإعدادات
-        await openAppSettings();
-      }
+      await _requestNotificationAndFinish();
+    } catch (e) {
+      debugPrint('Fallback storage error: $e');
     } finally {
       if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  // ✅ Android 10 وأقل
+  Future<void> _requestLegacyStorage() async {
+    try {
+      if (await Permission.storage.isDenied) {
+        await Permission.storage.request();
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+      await _requestNotificationAndFinish();
+    } catch (e) {
+      debugPrint('Legacy storage error: $e');
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  Future<void> _requestNotificationAndFinish() async {
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    final storageGranted = await _isStorageGranted();
+
+    if (!mounted) return;
+
+    if (storageGranted) {
+      final prefs = await SharedPreferences.getInstance();
+      final alreadyShown =
+          prefs.getBool('accessibility_onboarding_shown') ?? false;
+
+      await prefs.setBool('permissions_granted', true);
+      if (!alreadyShown) {
+        await prefs.setBool('accessibility_onboarding_shown', true);
+      }
+
+      widget.onGranted(!alreadyShown);
+    } else {
+      // كل المحاولات فشلت → افتح Settings
+      await openAppSettings();
     }
   }
 
@@ -121,7 +244,6 @@ class _PermissionScreenState extends State<PermissionScreen> {
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
-                // لو بيشتغل → disable الزر
                 onPressed: _requesting ? null : _requestAll,
                 icon: _requesting
                     ? const SizedBox(

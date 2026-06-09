@@ -1,6 +1,6 @@
 name: Muadh
 description: AI Media Guard - Auto Background Scanner
-version: 1.0.0+1
+version: 1.0.0+2
 environment:
   # workmanager 0.7.0 يتطلب Dart >=3.2 — نرفع الحد الأدنى
   sdk: '>=3.2.0 <4.0.0'
@@ -21,6 +21,7 @@ dependencies:
   intl: ^0.19.0
   path_provider: ^2.1.5
   permission_handler: ^12.0.1
+  rename: ^3.1.0
   typed_data: ^1.4.0
   uuid: ^4.3.3
   video_player: ^2.8.1
@@ -35,9 +36,18 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mockito: ^5.4.4
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png" # تأكد من وجود هذا المسار وصحة اسم الملف
+  adaptive_icon_background: "#ffffff" # يمكنك تغيير هذا اللون
+  adaptive_icon_foreground: "assets/icon/icon.png" # اختياري، إذا كنت تستخدم أيقونات تكيفية
 
 flutter:
   uses-material-design: true
   assets:
     - assets/models/
+    - assets/icon/
     

@@ -1,17 +1,16 @@
 // ══════════════════════════════════════════════════════════════════════════════
 //  scan_foreground_service.dart
 //
-//  المعمارية:
-//    FileObserver   → realtime priority → فوري (ملف جديد أو اتنقل)
-//    MediaStore     → high priority    → كل 5 دقايق عبر onRepeatEvent
+//  ✅ FIX CRASH: _pollMediaStore كانت بتتنادى من background isolate
+//  الـ MethodChannel مش شغّال من background isolate → كراش فوري
 //
-//  مفيش Initial Sweep — بنفحص الجديد بس
-//  مفيش WorkManager — مش محتاجينه
+//  الحل: MediaStore poll اتنقل للـ main isolate عبر
+//  FlutterForegroundTask.sendDataToTask من main.dart
+//  والـ TaskHandler بيستقبل النتايج عبر onReceiveData بس
 // ══════════════════════════════════════════════════════════════════════════════
 
 import 'package:Muadh/core/constants/scan_targets.dart';
 import 'package:Muadh/data/services/face_service.dart';
-import 'package:Muadh/data/services/file_observer_channel.dart';
 import 'package:Muadh/data/services/notification_service.dart';
 import 'package:Muadh/data/services/nsfw_service.dart';
 import 'package:Muadh/data/services/skin_service.dart';
@@ -20,17 +19,21 @@ import 'package:Muadh/domain/engines/decision_engine.dart';
 import 'package:Muadh/domain/engines/ensemble_scorer.dart';
 import 'package:Muadh/domain/scanning/smart_scan_queue.dart';
 import 'package:battery_plus/battery_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-// ── MediaStore channel — يُستخدم من onRepeatEvent (main isolate) فقط ─────────
+// ── MediaStore channel — يُستخدم من main isolate فقط ─────────────────────────
+// ✅ FIX: لازم يتنادى من main isolate مش من TaskHandler
 const _mediaStoreChannel = MethodChannel('medi_guard/media_store');
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  ScanServiceManager
 // ══════════════════════════════════════════════════════════════════════════════
 class ScanServiceManager {
+  static int _lastMediaPollTs = 0;
+
   static Future<void> initialize() async {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -46,7 +49,6 @@ class ScanServiceManager {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        // كل دقيقة — للـ battery check والـ MediaStore poll
         eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
@@ -57,11 +59,7 @@ class ScanServiceManager {
   }
 
   static Future<void> start() async {
-    // طلب استثناء من Battery Optimization عشان الـ service ميتقتلش
     await FlutterForegroundTask.requestIgnoreBatteryOptimization();
-    // طلب استثناء من Battery Optimization في الخلفية دون انتظار (await)
-    // لضمان عدم تعطيل الانتقال بين الشاشات في حال فتح حوار نظام
-    FlutterForegroundTask.requestIgnoreBatteryOptimization();
 
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.restartService();
@@ -74,13 +72,45 @@ class ScanServiceManager {
       );
     }
 
-    try {
-      await FileObserverChannel.startWatching(ScanTargets.folders);
-    } catch (_) {}
+    // آخر poll = دلوقتي − 6 دقايق عشان أول poll يحصل بعد دقيقة
+    _lastMediaPollTs = DateTime.now()
+            .subtract(const Duration(minutes: 6))
+            .millisecondsSinceEpoch ~/
+        1000;
   }
 
   static Future<void> stop() async {
     await FlutterForegroundTask.stopService();
+  }
+
+  // ✅ FIX: الـ MediaStore poll بيتنادى من main isolate (من main.dart)
+  // مش من TaskHandler اللي شغّال في background isolate
+  static Future<void> pollMediaStoreFromMainIsolate() async {
+    try {
+      final result = await _mediaStoreChannel.invokeMethod<List<dynamic>>(
+        'getRecentMedia',
+        {
+          'sinceTimestamp': _lastMediaPollTs,
+          'limit': 50,
+        },
+      );
+
+      _lastMediaPollTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+      if (result == null || result.isEmpty) return;
+
+      final paths =
+          result.whereType<String>().where(ScanTargets.isMediaFile).toList();
+
+      if (paths.isEmpty) return;
+
+      // بعت للـ background task عبر sendDataToTask
+      final batch = 'MEDIA_BATCH:${paths.join('|')}';
+      FlutterForegroundTask.sendDataToTask(batch);
+    } catch (e) {
+      // ✅ مش بيكرش — بيتجاهل الـ error بهدوء
+      debugPrint('MediaStore poll error (main isolate): $e');
+    }
   }
 }
 
@@ -90,7 +120,8 @@ void startScanCallback() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  ScanTaskHandler
+//  ScanTaskHandler — بيشتغل في background isolate
+//  ✅ FIX: مش بيستخدم MethodChannel هنا خالص
 // ══════════════════════════════════════════════════════════════════════════════
 class ScanTaskHandler extends TaskHandler {
   SmartScanQueue? _queue;
@@ -99,27 +130,24 @@ class ScanTaskHandler extends TaskHandler {
   bool _ready = false;
   bool _isLowBattery = false;
   int _lastBatteryCheckMs = 0;
-  int _repeatCount = 0;
-
-  // آخر timestamp عملنا فيه MediaStore poll (unix seconds)
-  int _lastMediaPollTs = 0;
 
   // ─── onStart ─────────────────────────────────────────────────────────────
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    await Future.delayed(const Duration(seconds: 8));
+    await Future.delayed(const Duration(seconds: 5));
     await _init();
   }
 
-  // ─── onReceiveData — FileObserver events ─────────────────────────────────
-  // كل message من FileObserver أو MediaStore بتيجي هنا
+  // ─── onReceiveData — FileObserver + MediaStore events ────────────────────
+  // كل البيانات بتيجي من main isolate عبر sendDataToTask
+  // ✅ FIX: مفيش MethodChannel هنا — بس نستقبل data
   @override
   void onReceiveData(Object data) {
     if (data is! String) return;
     if (!_ready || _queue == null) return;
     if (_isLowBattery) return;
 
-    // فورمات الـ MediaStore batch: "MEDIA_BATCH:path1|path2|path3"
+    // MediaStore batch: "MEDIA_BATCH:path1|path2|path3"
     if (data.startsWith('MEDIA_BATCH:')) {
       final paths = data.substring(12).split('|').where((p) => p.isNotEmpty);
       for (final path in paths) {
@@ -137,19 +165,12 @@ class ScanTaskHandler extends TaskHandler {
   }
 
   // ─── onRepeatEvent — كل دقيقة ────────────────────────────────────────────
+  // ✅ FIX: مش بنعمل MethodChannel هنا — بس battery check
+  // الـ MediaStore poll بيتعمل من main isolate عبر pollMediaStoreFromMainIsolate
   @override
   void onRepeatEvent(DateTime timestamp) {
-    _repeatCount++;
     _checkBattery();
-
-    if (!_ready || _queue == null || _isLowBattery) return;
-
-    // كل 5 دقايق → MediaStore poll
-    // onRepeatEvent بيشتغل على main isolate → الـ channel شغّال
-    if (_repeatCount % 1 == 0) {
-      // أو ببساطة قم بإزالة الشرط لتشغيله كل دقيقة
-      _pollMediaStore();
-    }
+    // ✅ لا يوجد _pollMediaStore() هنا — تم نقله للـ main isolate
   }
 
   // ─── onDestroy ────────────────────────────────────────────────────────────
@@ -160,7 +181,8 @@ class ScanTaskHandler extends TaskHandler {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  INIT
+  //  INIT — في background isolate
+  //  ✅ FIX: مفيش MethodChannel في الـ init
   // ══════════════════════════════════════════════════════════════════════════
   Future<void> _init() async {
     try {
@@ -190,49 +212,14 @@ class ScanTaskHandler extends TaskHandler {
         maxWorkers: 2,
       );
 
-      // آخر poll = دلوقتي − 6 دقايق عشان أول poll يحصل بعد دقيقة من الـ start
-      _lastMediaPollTs = DateTime.now()
-              .subtract(const Duration(minutes: 6))
-              .millisecondsSinceEpoch ~/
-          1000;
-
       _ready = true;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ScanTaskHandler init error: $e');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  MEDIA STORE POLL
-  //  بيشتغل من onRepeatEvent (main isolate) → الـ channel شغّال هنا
-  //  بيبعت النتايج للـ background task عبر sendDataToTask
-  // ══════════════════════════════════════════════════════════════════════════
-  Future<void> _pollMediaStore() async {
-    try {
-      final result = await _mediaStoreChannel.invokeMethod<List<dynamic>>(
-        'getRecentMedia',
-        {
-          'sinceTimestamp': _lastMediaPollTs,
-          'limit': 50,
-        },
-      );
-
-      _lastMediaPollTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-      if (result == null || result.isEmpty) return;
-
-      final paths =
-          result.whereType<String>().where(ScanTargets.isMediaFile).toList();
-
-      if (paths.isEmpty) return;
-
-      // بعت الـ paths للـ background task عبر sendDataToTask
-      // onReceiveData هيستقبلهم ويضيفهم بـ high priority
-      final batch = 'MEDIA_BATCH:${paths.join('|')}';
-      FlutterForegroundTask.sendDataToTask(batch);
-    } catch (_) {}
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  BATTERY CHECK — مرة كل دقيقة بس
+  //  BATTERY CHECK
   // ══════════════════════════════════════════════════════════════════════════
   void _checkBattery() {
     final now = DateTime.now().millisecondsSinceEpoch;

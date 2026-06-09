@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:Muadh/core/constants/scan_targets.dart';
 import 'package:Muadh/core/theme/app_theme.dart';
 import 'package:Muadh/core/theme/theme_provider.dart';
@@ -15,6 +17,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// ✅ FIX: Timer للـ MediaStore poll من main isolate كل دقيقة
+Timer? _mediaStorePollTimer;
 
 class AppBootstrapper {
   static bool _initialized = false;
@@ -44,6 +49,7 @@ class AppBootstrapper {
 
     await ScanServiceManager.initialize();
 
+    // ✅ FIX: استقبل FileObserver events من main isolate وبعتها للـ background task
     const EventChannel('medi_guard/scan_file')
         .receiveBroadcastStream()
         .listen((dynamic data) {
@@ -55,9 +61,7 @@ class AppBootstrapper {
 
   static void _compactIfNeeded(String boxName, {required int threshold}) {
     final box = Hive.box(boxName);
-    if (box.length > threshold) {
-      box.compact();
-    }
+    if (box.length > threshold) box.compact();
   }
 
   static void _pruneOldHashes() {
@@ -71,6 +75,16 @@ class AppBootstrapper {
       box.compact();
     } catch (_) {}
   }
+}
+
+// ✅ FIX: بيبدأ MediaStore poll timer من main isolate
+// بيتنادى بعد ما الـ service يبدأ فعلاً
+void _startMediaStorePollTimer() {
+  _mediaStorePollTimer?.cancel();
+  _mediaStorePollTimer = Timer.periodic(
+    const Duration(minutes: 1),
+    (_) => ScanServiceManager.pollMediaStoreFromMainIsolate(),
+  );
 }
 
 void main() async {
@@ -99,8 +113,23 @@ class MuadhApp extends ConsumerWidget {
           themeMode: isDarkMode ? ThemeMode.light : ThemeMode.dark,
           home: PermissionScreen(
             onGranted: (showAccessibilityOnboarding) async {
-              await FileObserverChannel.startWatching(ScanTargets.folders);
-              await ScanServiceManager.start();
+              try {
+                // ✅ FIX: ScanServiceManager.start() أولاً
+                await ScanServiceManager.start();
+
+                // ✅ FIX: ننتظر الـ service يبدأ فعلاً
+                await Future.delayed(const Duration(seconds: 1));
+
+                // ✅ FIX: FileObserver بعد الـ service
+                await FileObserverChannel.startWatching(ScanTargets.folders);
+
+                // ✅ FIX: نبدأ MediaStore poll timer من main isolate
+                // مش من background isolate عشان الـ MethodChannel يشتغل
+                _startMediaStorePollTimer();
+              } catch (e) {
+                debugPrint('Service start error: $e');
+              }
+
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 navigatorKey.currentState?.pushReplacement(
                   MaterialPageRoute(

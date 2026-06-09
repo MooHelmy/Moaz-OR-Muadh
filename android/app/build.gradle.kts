@@ -5,7 +5,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
+    
 }
 
 val keystoreProperties = Properties()
@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.muadh"
+        applicationId = "com.helmy.muadh"
         minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode

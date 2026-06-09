@@ -10,7 +10,9 @@ class ScanNotificationService {
 
   Future<void> initialize() async {
     try {
-      const androidSettings = AndroidInitializationSettings('ic_launcher');
+      // تأكد أن ic_notification موجود في android/app/src/main/res/drawable/
+      const androidSettings = AndroidInitializationSettings(
+          '@mipmap/ic_launcher'); // استخدام أيقونة التطبيق الرئيسية
 
       await _plugin.initialize(
         const InitializationSettings(android: androidSettings),
@@ -39,6 +41,7 @@ class ScanNotificationService {
           channelDescription: 'إشعار عند حذف محتوى غير لائق',
           importance: Importance.high,
           priority: Priority.high,
+          icon: '@mipmap/ic_launcher', // استخدام أيقونة التطبيق الرئيسية
           color: const Color(0xFFE53935),
           // ✅ grouping: كل إشعارات الحذف في مجموعة واحدة
           groupKey: _groupKey,
@@ -68,6 +71,7 @@ class ScanNotificationService {
             channelDescription: 'إشعار عند حذف محتوى غير لائق',
             importance: Importance.high,
             priority: Priority.high,
+            icon: '@mipmap/ic_launcher', // استخدام أيقونة التطبيق الرئيسية
             color: const Color(0xFFE53935),
             groupKey: _groupKey,
             setAsGroupSummary: true,

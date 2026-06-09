@@ -514,14 +514,30 @@ class MainActivity : FlutterActivity() {
         for (folderPath in folders) {
             val dir = File(folderPath)
             if (!dir.exists()) continue
-            val observer = object : FileObserver(dir, CREATE or MOVED_TO or CLOSE_WRITE) {
-                override fun onEvent(event: Int, path: String?) {
-                    if (path == null) return
-                    val fullPath = "$folderPath/$path"
-                    if (!isMediaFile(fullPath)) return
-                    runOnUiThread { eventSink?.success(fullPath) }
+
+            // ✅ FIX: FileObserver(File, Int) اتضاف في API 29 (Android 10)
+            // على API 28 وأقل لازم نستخدم FileObserver(String, Int)
+            val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                object : FileObserver(dir, CREATE or MOVED_TO or CLOSE_WRITE) {
+                    override fun onEvent(event: Int, path: String?) {
+                        if (path == null) return
+                        val fullPath = "$folderPath/$path"
+                        if (!isMediaFile(fullPath)) return
+                        runOnUiThread { eventSink?.success(fullPath) }
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                object : FileObserver(folderPath, CREATE or MOVED_TO or CLOSE_WRITE) {
+                    override fun onEvent(event: Int, path: String?) {
+                        if (path == null) return
+                        val fullPath = "$folderPath/$path"
+                        if (!isMediaFile(fullPath)) return
+                        runOnUiThread { eventSink?.success(fullPath) }
+                    }
                 }
             }
+
             observer.startWatching()
             observers.add(observer)
         }
